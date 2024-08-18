@@ -7,7 +7,7 @@ import (
 	"syscall"
 )
 
-func handleSignals(funcs ...io.Closer) {
+func HandleSignals(funcs ...io.Closer) {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
