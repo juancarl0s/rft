@@ -34,10 +34,8 @@ func rcv_exactly(conn net.Conn, nBytes int) ([]byte, error) {
 
 	// Step 1: Convert the byte slice to a string
 	sizeStr := string(sizeChunk)
-
 	// Step 2: Trim any leading  whitespace
 	sizeStr = strings.TrimSpace(sizeStr)
-
 	// Step 3: Parse to int
 	sizeToRead, err := strconv.Atoi(sizeStr)
 	if err != nil {
@@ -69,7 +67,6 @@ func Rcv_msg(conn net.Conn) ([]byte, error) {
 }
 
 func Send(conn net.Conn, msg []byte) error {
-	// fmt.Println("len(msg): ", len(msg), "msg: ", string(msg), "|")
 	size := []byte(fmt.Sprintf("%10d", len(msg)))
 	_, err := conn.Write(append(size, []byte(msg)...))
 	if err != nil {
