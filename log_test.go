@@ -123,9 +123,8 @@ func TestLog_LogLatestEntry(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			l := &Log{
-				CurrentTerm: tt.fields.CurrentTerm,
-				Entries:     tt.fields.Entries,
-				Lock:        tt.fields.Lock,
+				Entries: tt.fields.Entries,
+				Lock:    tt.fields.Lock,
 			}
 			if got := l.LogLatestEntry(); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Log.LogLatestEntry() = %v, want %v", got, tt.want)
@@ -139,7 +138,6 @@ func TestLog_AppendEntries(t *testing.T) {
 		name        string
 		log         *Log
 		params      AppendEntriesParams
-		wantTerm    int
 		wantErr     bool
 		wantEntries Entries
 	}{
@@ -150,11 +148,9 @@ func TestLog_AppendEntries(t *testing.T) {
 				LeaderCommitIdx: 10,
 			},
 			log: &Log{
-				CurrentTerm: 1,
-				Entries:     Entries{},
-				Lock:        sync.Mutex{},
+				Entries: Entries{},
+				Lock:    sync.Mutex{},
 			},
-			wantTerm:    1,
 			wantErr:     true,
 			wantEntries: Entries{},
 		},
@@ -177,11 +173,9 @@ func TestLog_AppendEntries(t *testing.T) {
 				LeaderCommitIdx: 0,
 			},
 			log: &Log{
-				CurrentTerm: 1,
-				Entries:     Entries{},
-				Lock:        sync.Mutex{},
+				Entries: Entries{},
+				Lock:    sync.Mutex{},
 			},
-			wantTerm:    1,
 			wantErr:     true,
 			wantEntries: Entries{},
 		},
@@ -203,11 +197,9 @@ func TestLog_AppendEntries(t *testing.T) {
 				LeaderCommitIdx: 0,
 			},
 			log: &Log{
-				CurrentTerm: 1,
-				Entries:     Entries{},
-				Lock:        sync.Mutex{},
+				Entries: Entries{},
+				Lock:    sync.Mutex{},
 			},
-			wantTerm: 1,
 			wantEntries: Entries{
 				{
 					Idx: 0,
@@ -233,7 +225,6 @@ func TestLog_AppendEntries(t *testing.T) {
 				LeaderCommitIdx: 0,
 			},
 			log: &Log{
-				CurrentTerm: 1,
 				Entries: Entries{
 					{
 						Idx:  0,
@@ -246,8 +237,7 @@ func TestLog_AppendEntries(t *testing.T) {
 				},
 				Lock: sync.Mutex{},
 			},
-			wantTerm: 1,
-			wantErr:  true,
+			wantErr: true,
 			wantEntries: Entries{
 				{
 					Idx:  0,
@@ -278,7 +268,6 @@ func TestLog_AppendEntries(t *testing.T) {
 				LeaderCommitIdx: 0,
 			},
 			log: &Log{
-				CurrentTerm: 1,
 				Entries: Entries{
 					{
 						Idx:  0,
@@ -291,8 +280,7 @@ func TestLog_AppendEntries(t *testing.T) {
 				},
 				Lock: sync.Mutex{},
 			},
-			wantTerm: 2,
-			wantErr:  true,
+			wantErr: true,
 			wantEntries: Entries{
 				{
 					Idx:  0,
@@ -323,7 +311,6 @@ func TestLog_AppendEntries(t *testing.T) {
 				LeaderCommitIdx: 0,
 			},
 			log: &Log{
-				CurrentTerm: 1,
 				Entries: Entries{
 					{
 						Idx:  0,
@@ -336,7 +323,6 @@ func TestLog_AppendEntries(t *testing.T) {
 				},
 				Lock: sync.Mutex{},
 			},
-			wantTerm: 3,
 			wantEntries: Entries{
 				{
 					Idx:  0,
@@ -366,7 +352,6 @@ func TestLog_AppendEntries(t *testing.T) {
 				LeaderCommitIdx: 1,
 			},
 			log: &Log{
-				CurrentTerm: 1,
 				Entries: Entries{
 					{
 						Idx:  0,
@@ -379,7 +364,6 @@ func TestLog_AppendEntries(t *testing.T) {
 				},
 				Lock: sync.Mutex{},
 			},
-			wantTerm: 3,
 			wantEntries: Entries{
 				{
 					Idx:  0,
@@ -414,7 +398,6 @@ func TestLog_AppendEntries(t *testing.T) {
 				LeaderCommitIdx: 0,
 			},
 			log: &Log{
-				CurrentTerm: 1,
 				Entries: Entries{
 					{
 						Idx:  0,
@@ -435,7 +418,6 @@ func TestLog_AppendEntries(t *testing.T) {
 				},
 				Lock: sync.Mutex{},
 			},
-			wantTerm: 3,
 			wantEntries: Entries{
 				{
 					Idx:  0,
@@ -478,7 +460,6 @@ func TestLog_AppendEntries(t *testing.T) {
 				LeaderCommitIdx: 0,
 			},
 			log: &Log{
-				CurrentTerm: 1,
 				Entries: Entries{
 					{
 						Idx:  0,
@@ -499,7 +480,6 @@ func TestLog_AppendEntries(t *testing.T) {
 				},
 				Lock: sync.Mutex{},
 			},
-			wantTerm: 3,
 			wantEntries: Entries{
 				{
 					Idx:  0,
@@ -549,7 +529,6 @@ func TestLog_AppendEntries(t *testing.T) {
 				LeaderCommitIdx: 0,
 			},
 			log: &Log{
-				CurrentTerm: 1,
 				Entries: Entries{
 					{
 						Idx:  0,
@@ -570,7 +549,6 @@ func TestLog_AppendEntries(t *testing.T) {
 				},
 				Lock: sync.Mutex{},
 			},
-			wantTerm: 3,
 			wantEntries: Entries{
 				{
 					Idx:  0,
@@ -585,11 +563,7 @@ func TestLog_AppendEntries(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			term, err := tt.log.AppendEntries(tt.params)
-			if !cmp.Equal(term, tt.wantTerm) {
-				t.Errorf("Log.CurrentTerm = %v, wantTerm %v", term, tt.wantTerm)
-			}
-
+			err := tt.log.AppendEntries(tt.params)
 			if !cmp.Equal(tt.log.Entries, tt.wantEntries) {
 				t.Errorf("Log.CurrentTerm = %v, wantTerm %v", tt.log.Entries, tt.wantEntries)
 			}
@@ -649,9 +623,8 @@ func TestLog_passConsistencyCheck(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			l := &Log{
-				CurrentTerm: tt.fields.CurrentTerm,
-				Entries:     tt.fields.Entries,
-				Lock:        tt.fields.Lock,
+				Entries: tt.fields.Entries,
+				Lock:    tt.fields.Lock,
 			}
 			if got := l.passConsistencyCheck(tt.args.params); got != tt.want {
 				t.Errorf("Log.passConsistencyCheck() = %v, want %v", got, tt.want)
