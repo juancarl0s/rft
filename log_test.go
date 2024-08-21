@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 // func TestNewLog(t *testing.T) {
@@ -23,57 +25,37 @@ import (
 // }
 
 func TestAppendEntriesParams_Valid(t *testing.T) {
-	type fields struct {
-		Term            int
-		LeaderID        string
-		PrevLogIdx      int
-		PrevLogTerm     int
-		EntriesIdxStart int
-		Entries         Entries
-		LeaderCommitIdx int
-	}
+
 	tests := []struct {
 		name    string
-		fields  fields
+		params  AppendEntriesParams
 		wantErr bool
 	}{
 		{
-			name: "LeaderCommitIdx must be less than EntriesIndexStart",
-			fields: fields{
-				LeaderCommitIdx: 10,
-				EntriesIdxStart: 5,
+			name: "1",
+			params: AppendEntriesParams{
+				Entries: Entries{{Idx: 0}},
+			},
+		},
+		{
+			name: "2",
+			params: AppendEntriesParams{
+				Entries:         Entries{{Idx: 1}},
+				LeaderCommitIdx: 2,
 			},
 			wantErr: true,
 		},
 		{
-			name: "LeaderCommitIdx must not be equal to EntriesIndexStart",
-			fields: fields{
-				LeaderCommitIdx: 10,
-				EntriesIdxStart: 10,
+			name: "3",
+			params: AppendEntriesParams{
+				Entries:         Entries{{Idx: 0}},
+				LeaderCommitIdx: 0,
 			},
-			wantErr: true,
-		},
-		{
-			name: "LeaderCommitIdx must not be equal to EntriesIndexStart",
-			fields: fields{
-				LeaderCommitIdx: 10,
-				EntriesIdxStart: 11,
-			},
-			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := AppendEntriesParams{
-				LeaderTerm:      tt.fields.Term,
-				LeaderID:        tt.fields.LeaderID,
-				PrevLogIdx:      tt.fields.PrevLogIdx,
-				PrevLogTerm:     tt.fields.PrevLogTerm,
-				EntriesIdxStart: tt.fields.EntriesIdxStart,
-				Entries:         tt.fields.Entries,
-				LeaderCommitIdx: tt.fields.LeaderCommitIdx,
-			}
-			if err := p.Valid(); (err != nil) != tt.wantErr {
+			if err := tt.params.Valid(); (err != nil) != tt.wantErr {
 				t.Errorf("AppendEntriesParams.Valid() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
@@ -163,8 +145,8 @@ func TestLog_AppendEntries(t *testing.T) {
 		{
 			name: "invalidParams",
 			params: AppendEntriesParams{
+				Entries:         Entries{{Idx: 1}},
 				LeaderCommitIdx: 10,
-				EntriesIdxStart: 1,
 			},
 			log: &Log{
 				CurrentTerm: 1,
@@ -184,7 +166,6 @@ func TestLog_AppendEntries(t *testing.T) {
 				PrevLogIdx:  0,
 				PrevLogTerm: 0,
 
-				EntriesIdxStart: 1,
 				Entries: Entries{
 					{
 						Idx: 1,
@@ -210,10 +191,9 @@ func TestLog_AppendEntries(t *testing.T) {
 				PrevLogIdx:  0,
 				PrevLogTerm: 0,
 
-				EntriesIdxStart: 0,
 				Entries: Entries{
 					{
-						Idx: 1,
+						Idx: 0,
 					},
 				},
 
@@ -235,7 +215,6 @@ func TestLog_AppendEntries(t *testing.T) {
 				PrevLogIdx:  1,
 				PrevLogTerm: 1,
 
-				EntriesIdxStart: 2,
 				Entries: Entries{
 					{
 						Idx:  5,
@@ -265,13 +244,12 @@ func TestLog_AppendEntries(t *testing.T) {
 		{
 			name: "passConsistencyCheck/no_holes/fail",
 			params: AppendEntriesParams{
-				LeaderTerm: 1,
+				LeaderTerm: 2,
 				LeaderID:   "leaderID",
 
 				PrevLogIdx:  1,
-				PrevLogTerm: 2,
+				PrevLogTerm: 1,
 
-				EntriesIdxStart: 2,
 				Entries: Entries{
 					{
 						Idx:  2,
@@ -295,7 +273,7 @@ func TestLog_AppendEntries(t *testing.T) {
 				},
 				Lock: sync.Mutex{},
 			},
-			wantTerm: 1,
+			wantTerm: 2,
 			wantErr:  true,
 		},
 		{
@@ -307,7 +285,6 @@ func TestLog_AppendEntries(t *testing.T) {
 				PrevLogIdx:  1,
 				PrevLogTerm: 2,
 
-				EntriesIdxStart: 2,
 				Entries: Entries{
 					{
 						Idx:  2,
@@ -332,10 +309,9 @@ func TestLog_AppendEntries(t *testing.T) {
 				Lock: sync.Mutex{},
 			},
 			wantTerm: 3,
-			wantErr:  true,
 		},
 		{
-			name: "heartbeat/success",
+			name: "editentries/heartbeat/success",
 			params: AppendEntriesParams{
 				LeaderTerm: 3,
 				LeaderID:   "leaderID",
@@ -343,8 +319,7 @@ func TestLog_AppendEntries(t *testing.T) {
 				PrevLogIdx:  1,
 				PrevLogTerm: 2,
 
-				EntriesIdxStart: 2,
-				Entries:         Entries{},
+				Entries: Entries{},
 
 				LeaderCommitIdx: 1,
 			},
@@ -364,11 +339,149 @@ func TestLog_AppendEntries(t *testing.T) {
 			},
 			wantTerm: 3,
 		},
+		{
+			name: "editentries/middle_of_log_edits/noop/success",
+			params: AppendEntriesParams{
+				LeaderTerm: 3,
+				LeaderID:   "leaderID",
+
+				PrevLogIdx:  1,
+				PrevLogTerm: 2,
+
+				Entries: Entries{
+					{
+						Idx:  1,
+						Term: 2,
+					},
+					{
+						Idx:  2,
+						Term: 2,
+					},
+				},
+
+				LeaderCommitIdx: 0,
+			},
+			log: &Log{
+				CurrentTerm: 1,
+				Entries: Entries{
+					{
+						Idx:  0,
+						Term: 2,
+					},
+					{
+						Idx:  1,
+						Term: 2,
+					},
+					{
+						Idx:  2,
+						Term: 2,
+					},
+					{
+						Idx:  3,
+						Term: 3,
+					},
+				},
+				Lock: sync.Mutex{},
+			},
+			wantTerm: 3,
+		},
+		{
+			name: "editentries/append_only/success",
+			params: AppendEntriesParams{
+				LeaderTerm: 3,
+				LeaderID:   "leaderID",
+
+				PrevLogIdx:  3,
+				PrevLogTerm: 3,
+
+				Entries: Entries{
+					{
+						Idx:  4,
+						Term: 3,
+					},
+					{
+						Idx:  5,
+						Term: 3,
+					},
+				},
+
+				LeaderCommitIdx: 0,
+			},
+			log: &Log{
+				CurrentTerm: 1,
+				Entries: Entries{
+					{
+						Idx:  0,
+						Term: 2,
+					},
+					{
+						Idx:  1,
+						Term: 2,
+					},
+					{
+						Idx:  2,
+						Term: 2,
+					},
+					{
+						Idx:  3,
+						Term: 3,
+					},
+				},
+				Lock: sync.Mutex{},
+			},
+			wantTerm: 3,
+		},
+		{
+			name: "editentries/edit_some_delete_some/noop/success",
+			params: AppendEntriesParams{
+				LeaderTerm: 3,
+				LeaderID:   "leaderID",
+
+				PrevLogIdx:  1,
+				PrevLogTerm: 2,
+
+				Entries: Entries{
+					{
+						Idx:  1,
+						Term: 2,
+					},
+					{
+						Idx:  2,
+						Term: 3,
+					},
+				},
+
+				LeaderCommitIdx: 0,
+			},
+			log: &Log{
+				CurrentTerm: 1,
+				Entries: Entries{
+					{
+						Idx:  0,
+						Term: 2,
+					},
+					{
+						Idx:  1,
+						Term: 2,
+					},
+					{
+						Idx:  2,
+						Term: 2,
+					},
+					{
+						Idx:  3,
+						Term: 3,
+					},
+				},
+				Lock: sync.Mutex{},
+			},
+			wantTerm: 3,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			term, err := tt.log.AppendEntries(tt.params)
-			if term != tt.wantTerm {
+			if !cmp.Equal(term, tt.wantTerm) {
 				t.Errorf("Log.CurrentTerm = %v, wantTerm %v", term, tt.wantTerm)
 			}
 

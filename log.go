@@ -2,6 +2,7 @@ package rft
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 )
 
@@ -41,22 +42,24 @@ type AppendEntriesParams struct {
 	LeaderTerm int
 	LeaderID   string
 
-	PrevLogIdx  int // -1 for the initial case?
-	PrevLogTerm int
+	PrevLogIdx  int // Log index of the log entry immediately preceding new ones.
+	PrevLogTerm int // Term of the log entry immediately preceding new ones.
 
-	EntriesIdxStart int // use this 0 for initial case?
-	Entries         Entries
+	// EntriesIdxStart int // use this 0 for initial case?
+	Entries Entries
 
 	LeaderCommitIdx int // (inclusive)
 }
 
 func (p AppendEntriesParams) Valid() error {
 	// Allow the initial case
-	if p.EntriesIdxStart == 0 {
-		return nil
-	}
-	if p.LeaderCommitIdx >= p.EntriesIdxStart {
-		return errors.New("LeaderCommitIdx must be less than EntriesIndexStart")
+	if len(p.Entries) > 0 {
+		if p.Entries[0].Idx == 0 {
+			return nil
+		}
+		if p.LeaderCommitIdx >= p.Entries[0].Idx {
+			return errors.New("LeaderCommitIdx must be less than EntriesIndexStart")
+		}
 	}
 
 	return nil
@@ -74,14 +77,17 @@ func (l *Log) LogLatestEntry() *Entry {
 // }
 
 func (l *Log) AppendEntries(params AppendEntriesParams) (int, error) {
+	// Update log's current term to the leader's term, if the leader's term is greater
+	if params.LeaderTerm > l.CurrentTerm {
+		l.CurrentTerm = params.LeaderTerm
+	}
+
 	l.Lock.Lock()
 	defer l.Lock.Unlock()
 
 	if err := params.Valid(); err != nil {
 		return l.CurrentTerm, err
 	}
-
-	l.heartbeat(params)
 
 	pass := l.passConsistencyCheck(params)
 	if !pass {
@@ -92,28 +98,22 @@ func (l *Log) AppendEntries(params AppendEntriesParams) (int, error) {
 	return l.CurrentTerm, nil
 }
 
-func (l *Log) heartbeat(params AppendEntriesParams) {
-	if params.LeaderTerm > l.CurrentTerm {
-		l.CurrentTerm = params.LeaderTerm
-	}
-}
-
 func (l *Log) passConsistencyCheck(params AppendEntriesParams) bool {
 	latestEntry := l.LogLatestEntry()
 
 	// 3) Special case: Appending new log entries at the start of the log needs to work
 	// TODO: REVISAR!
 	if latestEntry == nil {
-		if params.EntriesIdxStart == 0 {
+		if params.Entries[0].Idx == 0 {
 			return true
 		} else {
 			return false
 		}
 	}
 
-	// 1) The log is never allowed to have holes in it
+	// 1) The log is never allowed to have holes in it.
 	// if latestEntry.Idx < params.PrevLogIdx  {
-	if params.PrevLogIdx >= params.Entries[0].Idx {
+	if len(params.Entries) > 0 && params.Entries[0].Idx > latestEntry.Idx+1 {
 		return false
 	}
 
@@ -141,32 +141,50 @@ func (l *Log) editEntries(params AppendEntriesParams) {
 		return
 	}
 
-	entryToEditIdx := params.EntriesIdxStart
+	entryToEditIdx := params.Entries[0].Idx
 
 	// this is not correct
-	for _, entry := range params.Entries {
+	for _, newEntry := range params.Entries {
+		// for _, entry := range params.Entries {
 		// 4.a) In-place change case:
-		if len(l.Entries) > entryToEditIdx {
+		// if len(l.Entries) > entryToEditIdx {
+		// 	existingEntry := l.Entries[entryToEditIdx]
+		// 	if existingEntry.Idx == entry.Idx && existingEntry.Term == entry.Term {
+		// 		entryToEditIdx++
+		// 		continue
+		// 	} else { // if we find a mismatch, we need to delete the rest of the entries
+		// 		break
+		// 	}
+		// }
+		if len(l.Entries) > entryToEditIdx { //?????
 			existingEntry := l.Entries[entryToEditIdx]
-			if existingEntry.Idx == entry.Idx && existingEntry.Term == entry.Term {
+			if existingEntry.Idx == newEntry.Idx && existingEntry.Term == newEntry.Term {
 				entryToEditIdx++
 				continue
-			} else { // if we find a mismatch, we need to delete the rest of the entries
+			} else {
 				break
 			}
-		}
-
-		// 4.b) Append case:
-		if len(l.Entries) == entryToEditIdx {
-			l.Entries = append(l.Entries, entry)
+		} else if len(l.Entries) == entryToEditIdx {
+			l.Entries = append(l.Entries, newEntry)
 			entryToEditIdx++
 			continue
 		}
 
+		// 4.b) Append case:
+		// if len(l.Entries) == entryToEditIdx {
+		// 	l.Entries = append(l.Entries, entry)
+		// 	entryToEditIdx++
+		// 	continue
+		// }
+		fmt.Println(entryToEditIdx)
+		fmt.Println(l.Entries)
+		fmt.Println(params.Entries)
 		panic("This should never happen")
 	}
 
 	// 4.c) Deletion case:
+	// This is the index where we failed to match the new entry with the existing entry (see above check:
+	// if existingEntry.Idx == newEntry.Idx && existingEntry.Term == newEntry.Term)
 	if entryToEditIdx < len(l.Entries) {
 		l.Entries = l.Entries[:entryToEditIdx]
 		entryToEditIdx++
