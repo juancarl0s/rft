@@ -27,15 +27,15 @@ type Log struct {
 	// EntryLookup map[int]*Entry
 }
 
-func NewLog() *Log {
-	log := &Log{
-		CurrentTerm: 0,
-		Entries:     Entries{},
-		Lock:        sync.Mutex{},
-	}
+// func NewLog() *Log {
+// 	log := &Log{
+// 		CurrentTerm: 0,
+// 		Entries:     Entries{},
+// 		Lock:        sync.Mutex{},
+// 	}
 
-	return log
-}
+// 	return log
+// }
 
 type AppendEntriesParams struct {
 	LeaderTerm int
@@ -71,9 +71,6 @@ func (l *Log) LogLatestEntry() *Entry {
 
 	return &l.Entries[len(l.Entries)-1]
 }
-
-// type AppendEntriesResponse struct {
-// }
 
 func (l *Log) AppendEntries(params AppendEntriesParams) (int, error) {
 	// Update log's current term to the leader's term, if the leader's term is greater
@@ -142,80 +139,29 @@ func (l *Log) editEntries(params AppendEntriesParams) {
 
 	entryToEditIdx := params.Entries[0].Idx
 
-	var handledAllParamEntries bool
-	// this is not correct
+	var needTruncateRest bool
 	for _, newEntry := range params.Entries {
-		// if i == len(params.Entries)-1 {
-		// 	handledAllParamEntries = true
-		// }
-		// for _, entry := range params.Entries {
-		// 4.a) In-place change case:
-		// if len(l.Entries) > entryToEditIdx {
-		// 	existingEntry := l.Entries[entryToEditIdx]
-		// 	if existingEntry.Idx == entry.Idx && existingEntry.Term == entry.Term {
-		// 		entryToEditIdx++
-		// 		continue
-		// 	} else { // if we find a mismatch, we need to delete the rest of the entries
-		// 		break
-		// 	}
-		// }
-		if len(l.Entries) > entryToEditIdx { //?????
+		if len(l.Entries) > entryToEditIdx {
+			// 4.a) In-place change case:
 			existingEntry := l.Entries[entryToEditIdx]
 			if existingEntry.Idx == newEntry.Idx && existingEntry.Term == newEntry.Term {
 				entryToEditIdx++
-				continue
 			} else {
+				needTruncateRest = true
 				break
 			}
 		} else if len(l.Entries) == entryToEditIdx {
+			// 4.b) Append case:
 			l.Entries = append(l.Entries, newEntry)
 			entryToEditIdx++
-			continue
 		}
-
-		// if i == len(params.Entries)-1 {
-		// 	return
-		// }
-
-		// 4.b) Append case:
-		// if len(l.Entries) == entryToEditIdx {
-		// 	l.Entries = append(l.Entries, entry)
-		// 	entryToEditIdx++
-		// 	continue
-		// }
-		// fmt.Println(entryToEditIdx)
-		// fmt.Println(l.Entries)
-		// fmt.Println(params.Entries)
-		// panic("This should never happen")
-	}
-
-	if handledAllParamEntries {
-		return
 	}
 
 	// 4.c) Deletion case:
-	// This is the index where we failed to match the new entry with the existing entry (see above check:
-	// if existingEntry.Idx == newEntry.Idx && existingEntry.Term == newEntry.Term)
-	if entryToEditIdx < len(l.Entries) {
+	// This is the index where we failed to match the new entry with the existing entry
+	// so we need to truncate the rest of the log from the failed index
+	if needTruncateRest && entryToEditIdx < len(l.Entries) {
 		l.Entries = l.Entries[:entryToEditIdx]
 		entryToEditIdx++
 	}
 }
-
-// func (l *Log) latestTermIndex() (term, index int) {
-// 	return l.currentTerm(), l.latestIndex()
-// }
-
-// func (l *Log) currentTerm() int {
-// 	if len(l.Entries) == 0 {
-// 		return 0
-// 	}
-// 	return l.Entries[len(l.Entries)-1].Term
-// }
-
-// func (l *Log) latestIndex() int {
-// 	if len(l.Entries) == 0 {
-// 		return 0
-// 	}
-// 	return l.Entries[len(l.Entries)-1].Term
-// }

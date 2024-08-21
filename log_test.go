@@ -527,12 +527,12 @@ func TestLog_AppendEntries(t *testing.T) {
 			},
 		},
 		{
-			name: "editentries/edit_some_delete_some/noop/success",
+			name: "editentries/edit_some_delete_some/success",
 			params: AppendEntriesParams{
 				LeaderTerm: 3,
 				LeaderID:   "leaderID",
 
-				PrevLogIdx:  1,
+				PrevLogIdx:  0,
 				PrevLogTerm: 2,
 
 				Entries: Entries{
