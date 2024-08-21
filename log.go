@@ -2,7 +2,6 @@ package rft
 
 import (
 	"errors"
-	"fmt"
 	"sync"
 )
 
@@ -143,8 +142,12 @@ func (l *Log) editEntries(params AppendEntriesParams) {
 
 	entryToEditIdx := params.Entries[0].Idx
 
+	var handledAllParamEntries bool
 	// this is not correct
 	for _, newEntry := range params.Entries {
+		// if i == len(params.Entries)-1 {
+		// 	handledAllParamEntries = true
+		// }
 		// for _, entry := range params.Entries {
 		// 4.a) In-place change case:
 		// if len(l.Entries) > entryToEditIdx {
@@ -170,16 +173,24 @@ func (l *Log) editEntries(params AppendEntriesParams) {
 			continue
 		}
 
+		// if i == len(params.Entries)-1 {
+		// 	return
+		// }
+
 		// 4.b) Append case:
 		// if len(l.Entries) == entryToEditIdx {
 		// 	l.Entries = append(l.Entries, entry)
 		// 	entryToEditIdx++
 		// 	continue
 		// }
-		fmt.Println(entryToEditIdx)
-		fmt.Println(l.Entries)
-		fmt.Println(params.Entries)
-		panic("This should never happen")
+		// fmt.Println(entryToEditIdx)
+		// fmt.Println(l.Entries)
+		// fmt.Println(params.Entries)
+		// panic("This should never happen")
+	}
+
+	if handledAllParamEntries {
+		return
 	}
 
 	// 4.c) Deletion case:

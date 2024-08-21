@@ -136,11 +136,12 @@ func TestLog_LogLatestEntry(t *testing.T) {
 
 func TestLog_AppendEntries(t *testing.T) {
 	tests := []struct {
-		name     string
-		log      *Log
-		params   AppendEntriesParams
-		wantTerm int
-		wantErr  bool
+		name        string
+		log         *Log
+		params      AppendEntriesParams
+		wantTerm    int
+		wantErr     bool
+		wantEntries Entries
 	}{
 		{
 			name: "invalidParams",
@@ -153,8 +154,9 @@ func TestLog_AppendEntries(t *testing.T) {
 				Entries:     Entries{},
 				Lock:        sync.Mutex{},
 			},
-			wantTerm: 1,
-			wantErr:  true,
+			wantTerm:    1,
+			wantErr:     true,
+			wantEntries: Entries{},
 		},
 		// Consistency check
 		{
@@ -179,8 +181,9 @@ func TestLog_AppendEntries(t *testing.T) {
 				Entries:     Entries{},
 				Lock:        sync.Mutex{},
 			},
-			wantTerm: 1,
-			wantErr:  true,
+			wantTerm:    1,
+			wantErr:     true,
+			wantEntries: Entries{},
 		},
 		{
 			name: "passConsistencyCheck/first_append/success",
@@ -205,6 +208,11 @@ func TestLog_AppendEntries(t *testing.T) {
 				Lock:        sync.Mutex{},
 			},
 			wantTerm: 1,
+			wantEntries: Entries{
+				{
+					Idx: 0,
+				},
+			},
 		},
 		{
 			name: "passConsistencyCheck/no_holes/fail",
@@ -240,6 +248,16 @@ func TestLog_AppendEntries(t *testing.T) {
 			},
 			wantTerm: 1,
 			wantErr:  true,
+			wantEntries: Entries{
+				{
+					Idx:  0,
+					Term: 1,
+				},
+				{
+					Idx:  1,
+					Term: 1,
+				},
+			},
 		},
 		{
 			name: "passConsistencyCheck/no_holes/fail",
@@ -275,6 +293,16 @@ func TestLog_AppendEntries(t *testing.T) {
 			},
 			wantTerm: 2,
 			wantErr:  true,
+			wantEntries: Entries{
+				{
+					Idx:  0,
+					Term: 2,
+				},
+				{
+					Idx:  1,
+					Term: 2,
+				},
+			},
 		},
 		{
 			name: "success",
@@ -309,6 +337,20 @@ func TestLog_AppendEntries(t *testing.T) {
 				Lock: sync.Mutex{},
 			},
 			wantTerm: 3,
+			wantEntries: Entries{
+				{
+					Idx:  0,
+					Term: 2,
+				},
+				{
+					Idx:  1,
+					Term: 2,
+				},
+				{
+					Idx:  2,
+					Term: 3,
+				},
+			},
 		},
 		{
 			name: "editentries/heartbeat/success",
@@ -338,6 +380,16 @@ func TestLog_AppendEntries(t *testing.T) {
 				Lock: sync.Mutex{},
 			},
 			wantTerm: 3,
+			wantEntries: Entries{
+				{
+					Idx:  0,
+					Term: 2,
+				},
+				{
+					Idx:  1,
+					Term: 2,
+				},
+			},
 		},
 		{
 			name: "editentries/middle_of_log_edits/noop/success",
@@ -345,7 +397,7 @@ func TestLog_AppendEntries(t *testing.T) {
 				LeaderTerm: 3,
 				LeaderID:   "leaderID",
 
-				PrevLogIdx:  1,
+				PrevLogIdx:  0,
 				PrevLogTerm: 2,
 
 				Entries: Entries{
@@ -384,6 +436,24 @@ func TestLog_AppendEntries(t *testing.T) {
 				Lock: sync.Mutex{},
 			},
 			wantTerm: 3,
+			wantEntries: Entries{
+				{
+					Idx:  0,
+					Term: 2,
+				},
+				{
+					Idx:  1,
+					Term: 2,
+				},
+				{
+					Idx:  2,
+					Term: 2,
+				},
+				{
+					Idx:  3,
+					Term: 3,
+				},
+			},
 		},
 		{
 			name: "editentries/append_only/success",
@@ -430,6 +500,31 @@ func TestLog_AppendEntries(t *testing.T) {
 				Lock: sync.Mutex{},
 			},
 			wantTerm: 3,
+			wantEntries: Entries{
+				{
+					Idx:  0,
+					Term: 2,
+				},
+				{
+					Idx:  1,
+					Term: 2,
+				},
+				{
+					Idx:  2,
+					Term: 2,
+				},
+				{
+					Idx:  3,
+					Term: 3,
+				}, {
+					Idx:  4,
+					Term: 3,
+				},
+				{
+					Idx:  5,
+					Term: 3,
+				},
+			},
 		},
 		{
 			name: "editentries/edit_some_delete_some/noop/success",
@@ -476,6 +571,16 @@ func TestLog_AppendEntries(t *testing.T) {
 				Lock: sync.Mutex{},
 			},
 			wantTerm: 3,
+			wantEntries: Entries{
+				{
+					Idx:  0,
+					Term: 2,
+				},
+				{
+					Idx:  1,
+					Term: 2,
+				},
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -483,6 +588,10 @@ func TestLog_AppendEntries(t *testing.T) {
 			term, err := tt.log.AppendEntries(tt.params)
 			if !cmp.Equal(term, tt.wantTerm) {
 				t.Errorf("Log.CurrentTerm = %v, wantTerm %v", term, tt.wantTerm)
+			}
+
+			if !cmp.Equal(tt.log.Entries, tt.wantEntries) {
+				t.Errorf("Log.CurrentTerm = %v, wantTerm %v", tt.log.Entries, tt.wantEntries)
 			}
 
 			if (err != nil) != tt.wantErr {
