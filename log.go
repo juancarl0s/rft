@@ -38,8 +38,8 @@ func NewLog() *Log {
 }
 
 type AppendEntriesParams struct {
-	Term     int
-	LeaderID string
+	LeaderTerm int
+	LeaderID   string
 
 	PrevLogIdx  int // -1 for the initial case?
 	PrevLogTerm int
@@ -93,8 +93,8 @@ func (l *Log) AppendEntries(params AppendEntriesParams) (int, error) {
 }
 
 func (l *Log) heartbeat(params AppendEntriesParams) {
-	if params.Term > l.CurrentTerm {
-		l.CurrentTerm = params.Term
+	if params.LeaderTerm > l.CurrentTerm {
+		l.CurrentTerm = params.LeaderTerm
 	}
 }
 
@@ -112,7 +112,8 @@ func (l *Log) passConsistencyCheck(params AppendEntriesParams) bool {
 	}
 
 	// 1) The log is never allowed to have holes in it
-	if latestEntry.Idx < params.PrevLogIdx {
+	// if latestEntry.Idx < params.PrevLogIdx  {
+	if params.PrevLogIdx >= params.Entries[0].Idx {
 		return false
 	}
 
@@ -120,7 +121,7 @@ func (l *Log) passConsistencyCheck(params AppendEntriesParams) bool {
 	// must verify that the term number of any previous
 	// entry matches an expected value
 	prevEntry := l.Entries[params.PrevLogIdx]
-	if prevEntry.Term <= params.PrevLogTerm {
+	if prevEntry.Term != params.PrevLogTerm {
 		return false
 	}
 	// if latestEntry.Term > params.PrevLogTerm {
@@ -131,10 +132,11 @@ func (l *Log) passConsistencyCheck(params AppendEntriesParams) bool {
 }
 
 func (l *Log) editEntries(params AppendEntriesParams) {
-	// 4) Append_entries() is "idempotent." That means that append_entries() can be called
-	// repeatedly with the same arguments and the end result is always the same
-	// 4.b) Upserting case
+	// 4) Append_entries() is "idempotent." That means that append_entries()
+	// can be called repeatedly with the same arguments and the end result
+	// is always the same
 
+	// Heartbeat case
 	if len(params.Entries) == 0 {
 		return
 	}

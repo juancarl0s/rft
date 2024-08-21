@@ -65,7 +65,7 @@ func TestAppendEntriesParams_Valid(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := AppendEntriesParams{
-				Term:            tt.fields.Term,
+				LeaderTerm:      tt.fields.Term,
 				LeaderID:        tt.fields.LeaderID,
 				PrevLogIdx:      tt.fields.PrevLogIdx,
 				PrevLogTerm:     tt.fields.PrevLogTerm,
@@ -178,8 +178,8 @@ func TestLog_AppendEntries(t *testing.T) {
 		{
 			name: "passConsistencyCheck/first_append/fail",
 			params: AppendEntriesParams{
-				Term:     1,
-				LeaderID: "leaderID",
+				LeaderTerm: 1,
+				LeaderID:   "leaderID",
 
 				PrevLogIdx:  0,
 				PrevLogTerm: 0,
@@ -204,8 +204,8 @@ func TestLog_AppendEntries(t *testing.T) {
 		{
 			name: "passConsistencyCheck/first_append/success",
 			params: AppendEntriesParams{
-				Term:     1,
-				LeaderID: "leaderID",
+				LeaderTerm: 1,
+				LeaderID:   "leaderID",
 
 				PrevLogIdx:  0,
 				PrevLogTerm: 0,
@@ -229,10 +229,10 @@ func TestLog_AppendEntries(t *testing.T) {
 		{
 			name: "passConsistencyCheck/no_holes/fail",
 			params: AppendEntriesParams{
-				Term:     1,
-				LeaderID: "leaderID",
+				LeaderTerm: 1,
+				LeaderID:   "leaderID",
 
-				PrevLogIdx:  4,
+				PrevLogIdx:  1,
 				PrevLogTerm: 1,
 
 				EntriesIdxStart: 2,
@@ -265,8 +265,8 @@ func TestLog_AppendEntries(t *testing.T) {
 		{
 			name: "passConsistencyCheck/no_holes/fail",
 			params: AppendEntriesParams{
-				Term:     1,
-				LeaderID: "leaderID",
+				LeaderTerm: 1,
+				LeaderID:   "leaderID",
 
 				PrevLogIdx:  1,
 				PrevLogTerm: 2,
@@ -301,8 +301,8 @@ func TestLog_AppendEntries(t *testing.T) {
 		{
 			name: "success",
 			params: AppendEntriesParams{
-				Term:     3,
-				LeaderID: "leaderID",
+				LeaderTerm: 3,
+				LeaderID:   "leaderID",
 
 				PrevLogIdx:  1,
 				PrevLogTerm: 2,
@@ -333,6 +333,36 @@ func TestLog_AppendEntries(t *testing.T) {
 			},
 			wantTerm: 3,
 			wantErr:  true,
+		},
+		{
+			name: "heartbeat/success",
+			params: AppendEntriesParams{
+				LeaderTerm: 3,
+				LeaderID:   "leaderID",
+
+				PrevLogIdx:  1,
+				PrevLogTerm: 2,
+
+				EntriesIdxStart: 2,
+				Entries:         Entries{},
+
+				LeaderCommitIdx: 1,
+			},
+			log: &Log{
+				CurrentTerm: 1,
+				Entries: Entries{
+					{
+						Idx:  0,
+						Term: 2,
+					},
+					{
+						Idx:  1,
+						Term: 2,
+					},
+				},
+				Lock: sync.Mutex{},
+			},
+			wantTerm: 3,
 		},
 	}
 	for _, tt := range tests {
