@@ -55,6 +55,8 @@ func NewRaftLogic(nodename string, role string, term int) *RaftLogic {
 		macthIds: map[string]int{},
 	}
 
+	rf.Log.AppendCommand(0, "initial dummy command") // maybe not
+
 	// Populate nextIdx and matchIds for each server
 	for name := range SERVERS {
 		if name == nodename {
@@ -162,7 +164,7 @@ func (rf *RaftLogic) handleMsg(conn net.Conn) {
 
 func (rf *RaftLogic) SendAppendEntriesToAllFollowers() {
 	if rf.Role != "leader" {
-		panic("Only leader can send AppendEntries to followers")
+		panic("Only leader can send AppendEtries to followers")
 	}
 	// For each follower
 	for nodename, _ := range SERVERS {
@@ -221,6 +223,8 @@ func (rf *RaftLogic) SendAppendEntryToFollower(nodename string) {
 		slog.Error("Error encoding JSON:", "error", err)
 		return
 	}
+
+	// fmt.Printf("\n\nAppendEntriesParams:\n%+v\n", params)
 
 	rf.send(SERVERS[nodename], jsonData)
 }

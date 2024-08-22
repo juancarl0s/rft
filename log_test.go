@@ -622,32 +622,32 @@ func TestLog_AppendEntries(t *testing.T) {
 // 	}
 // }
 
-func TestLog_passConsistencyCheck(t *testing.T) {
-	type fields struct {
-		CurrentTerm int
-		Entries     Entries
-		Lock        sync.Mutex
-	}
-	type args struct {
-		params AppendEntriesParams
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		args   args
-		want   bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			l := &Log{
-				Entries:     tt.fields.Entries,
-				EntriesLock: tt.fields.Lock,
-			}
-			if got := l.consistencyCheck(tt.args.params); got != tt.want {
-				t.Errorf("Log.passConsistencyCheck() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
+// func TestLog_passConsistencyCheck(t *testing.T) {
+// 	type fields struct {
+// 		CurrentTerm int
+// 		Entries     Entries
+// 		Lock        sync.Mutex
+// 	}
+// 	type args struct {
+// 		params AppendEntriesParams
+// 	}
+// 	tests := []struct {
+// 		name   string
+// 		fields fields
+// 		args   args
+// 		want   bool
+// 	}{
+// 		// TODO: Add test cases.
+// 	}
+// 	for _, tt := range tests {
+// 		t.Run(tt.name, func(t *testing.T) {
+// 			l := &Log{
+// 				Entries:     tt.fields.Entries,
+// 				EntriesLock: tt.fields.Lock,
+// 			}
+// 			if got := l.consistencyCheck(tt.args.params); got != tt.want {
+// 				t.Errorf("Log.passConsistencyCheck() = %v, want %v", got, tt.want)
+// 			}
+// 		})
+// 	}
+// }

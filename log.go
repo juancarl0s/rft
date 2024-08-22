@@ -2,6 +2,7 @@ package rft
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 )
 
@@ -124,38 +125,39 @@ func (l *Log) AppendEntries(params AppendEntriesParams) error {
 
 	l.EntriesLock.Lock()
 	defer l.EntriesLock.Unlock()
+	// defer fmt.Printf("\n\nAppendEntriesParams: %+v\n\n", params)
+	// defer fmt.Printf("\n\n@@@@@@@@@@Log Entries: %+v\n\n", l.Entries)
 
 	if err := params.Valid(); err != nil {
 		return err
 	}
 
-	pass := l.consistencyCheck(params)
-	if !pass {
-		return errors.New("consistency check failed")
+	if err := l.consistencyCheck(params); err != nil {
+		return fmt.Errorf("consistency check failed: %w", err)
 	}
 	l.editEntries(params)
 
 	return nil
 }
 
-func (l *Log) consistencyCheck(params AppendEntriesParams) bool {
+func (l *Log) consistencyCheck(params AppendEntriesParams) error {
 	latestEntry := l.LogLatestEntry()
 
 	// 3) Special case: Appending new log entries at the start of the log needs to work
 	// TODO: REVISAR!
 	if latestEntry == nil {
 		if len(params.Entries) == 0 { //first appendEndtries (heartbeat)
-			return true
+			return nil
 		} else if params.Entries[0].Idx == 0 { //first appendEndtries (non-heartbeat) with entries
-			return true
+			return nil
 		} else {
-			return false
+			return fmt.Errorf("latestEntry is nil and expected the first entry to be 0 in: %+v", params.Entries)
 		}
 	}
 
 	// 1) The log is never allowed to have holes in it.
 	if len(params.Entries) > 0 && params.Entries[0].Idx > latestEntry.Idx+1 {
-		return false
+		return fmt.Errorf("log is never allowed to have holes in it. params.Entries[0].Idx: %+v, latestEntry.Idx: %+v", params.Entries[0].Idx, latestEntry.Idx)
 	}
 
 	// 2) There is a log-continuity condition where every append operation
@@ -163,10 +165,10 @@ func (l *Log) consistencyCheck(params AppendEntriesParams) bool {
 	// entry matches an expected value
 	prevEntry := l.Entries[params.PrevLogIdx]
 	if prevEntry.Term != params.PrevLogTerm {
-		return false
+		return fmt.Errorf("term number of any previous entry doesn't match. prevEntry.Term: %+v, params.PrevLogTerm: %+v", prevEntry.Term, params.PrevLogTerm)
 	}
 
-	return true
+	return nil
 }
 
 func (l *Log) editEntries(params AppendEntriesParams) {
