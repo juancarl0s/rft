@@ -138,26 +138,14 @@ func (rf *RaftLogic) ReceiveV2(listener net.Listener) {
 }
 
 func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
-	fmt.Println("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
 	defer conn.Close()
 
 	for {
 		msgBytes, err := Rcv_msg(conn)
 		if err != nil {
-			// slog.Error("Error receiving message:", "error", err, "msgBytes", msgBytes)
-
-			// if errors.Is(err, io.EOF) {
-			// 	slog.Error("@@@@@@@@@@@@@@@@@@", "error", err, "msgBytes", msgBytes)
-			// 	return
-			// }
-
-			// continue
-			// // return
-
 			if !errors.Is(err, io.EOF) {
 				err = fmt.Errorf("error receiving message: %w", err)
 				slog.Error("Error sending back response:", "error", err)
-				return
 			}
 			return
 		}
@@ -168,16 +156,26 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 			slog.Error("Error decoding JSON:", "error", err)
 			return
 		}
+
+		if msg.MsgType == SUBMIT_COMMAND_MSG && msg.SubmitCommandRequest != nil && *msg.SubmitCommandRequest == "log" {
+			fmt.Printf("\n\nEntries %+v\n\n", rf.Log.Entries)
+			if rf.Role == "leader" {
+				rf.ForwardLogCommandToFollowers()
+			}
+			continue
+		}
+
 		if rf.Role == "leader" {
 			if msg.MsgType == SUBMIT_COMMAND_MSG {
 				if msg.SubmitCommandRequest != nil && *msg.SubmitCommandRequest == "log" {
 					fmt.Printf("\n\nEntries %+v\n\n", rf.Log.Entries)
+					continue
 				}
 
 				rf.SubmitNewCommand(*msg.SubmitCommandRequest)
 				rf.SendAppendEntriesToAllFollowers()
 			}
-		} else {
+		} else if rf.Role == "follower" {
 			if msg.MsgType == APPEND_ENTRIES_MSG {
 				appendEntriesResult := handleAppendEntriesRequest(rf, msg)
 				jsonData, err := json.Marshal(appendEntriesResult)
@@ -187,9 +185,6 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 				}
 
 				rf.send(conn.RemoteAddr().String(), jsonData)
-
-				fmt.Printf("\n\n Log: %+v\n\n", rf.Log.Entries)
-				// rf.send(SERVERS["1"], jsonData)
 			}
 		}
 
@@ -247,7 +242,6 @@ func (rf *RaftLogic) SendAppendEntriesToAllFollowers() {
 
 		go rf.SendAppendEntryToFollower(nodename)
 	}
-	fmt.Println("SendAppendEntriesToAllFollowers() done")
 }
 
 func (rf *RaftLogic) SendAppendEntryToFollower(nodename string) {
@@ -303,7 +297,7 @@ func (rf *RaftLogic) SendAppendEntryToFollower(nodename string) {
 		return
 	}
 
-	fmt.Printf("\nSERVERS[nodename]: %s\njsonData:\n%+v\n", nodename, string(jsonData))
+	// fmt.Printf("\nSERVERS[nodename]: %s\njsonData:\n%+v\n", nodename, string(jsonData))
 
 	rf.send(SERVERS[nodename], jsonData)
 	// res, err := rf.sendAndRcv(SERVERS[nodename], jsonData)
@@ -323,14 +317,13 @@ func (rf *RaftLogic) send(addr string, msg []byte) {
 	}
 	defer conn.Close()
 
-	fmt.Printf("\nmsg: %s\n\n", msg)
+	// fmt.Printf("\nmsg: %s\n\n", msg)
 	// _, err = conn.Write(jsonData)
 	err = Send(conn, msg)
 	if err != nil {
 		slog.Error("Error sending message:", "error", err)
 		return
 	}
-	slog.Info("Message sent successfully")
 }
 
 func (rf *RaftLogic) sendAndRcv(addr string, msg []byte) ([]byte, error) {
@@ -356,4 +349,26 @@ func (rf *RaftLogic) sendAndRcv(addr string, msg []byte) ([]byte, error) {
 	}
 
 	return res, nil
+}
+
+func (rf *RaftLogic) ForwardLogCommandToFollowers() {
+	if rf.Role != "leader" {
+		panic("Only leader can forward log command to followers")
+	}
+	// For each follower
+	for nodename, _ := range SERVERS {
+		if nodename == rf.Nodename {
+			continue
+		}
+		cmd := "log"
+		msg := Message{
+			MsgType:              SUBMIT_COMMAND_MSG,
+			SubmitCommandRequest: &cmd,
+		}
+		jsonMsg, err := json.Marshal(msg)
+		if err != nil {
+			panic(err)
+		}
+		go rf.send(SERVERS[nodename], jsonMsg)
+	}
 }
