@@ -45,7 +45,7 @@ func (l *Log) LogLatestEntry() *Entry {
 	return &l.Entries[len(l.Entries)-1]
 }
 
-func (l *Log) AppendCommand(term int, cmd string) {
+func (l *Log) AppendCommand(term int, cmd string) int {
 	l.EntriesLock.Lock()
 	defer l.EntriesLock.Unlock()
 
@@ -62,9 +62,14 @@ func (l *Log) AppendCommand(term int, cmd string) {
 		Cmd:  cmd,
 	}
 	l.Entries = append(l.Entries, newEntry)
+
+	return newEntry.Idx
 }
 
 func (l *Log) GetEntriesCopyUNSAFE(fromIdx int) Entries {
+	l.EntriesLock.Lock()
+	defer l.EntriesLock.Unlock()
+
 	entries := Entries{}
 	for i := fromIdx; i < len(l.Entries); i++ {
 		entries = append(entries, l.Entries[i])
@@ -73,13 +78,13 @@ func (l *Log) GetEntriesCopyUNSAFE(fromIdx int) Entries {
 	return entries
 }
 
-func (l *Log) Lock() {
-	l.EntriesLock.Lock()
-}
+// func (l *Log) Lock() {
+// 	l.EntriesLock.Lock()
+// }
 
-func (l *Log) UnLock() {
-	l.EntriesLock.Unlock()
-}
+// func (l *Log) UnLock() {
+// 	l.EntriesLock.Unlock()
+// }
 
 // TODO: remove Current term from Log
 // Return the MatchIndex for the leader to update and an error

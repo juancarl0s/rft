@@ -3,8 +3,9 @@ package rft
 import "errors"
 
 var (
-	APPEND_ENTRIES_MSG = "AppendEntriesRequest"
-	SUBMIT_COMMAND_MSG = "SubmitCommand"
+	APPEND_ENTRIES_MSG          = "AppendEntriesRequest"
+	APPEND_ENTRIES_RESPONSE_MSG = "AppendEntriesResponse"
+	SUBMIT_COMMAND_MSG          = "SubmitCommand"
 )
 
 type Message struct {
@@ -15,9 +16,11 @@ type Message struct {
 }
 
 type AppendEntriesResponse struct {
-	Success                            bool `json:"success"` // true if follower appended entries successfully
-	Term                               int  `json:"term"`    // currentTerm, for leader to update itself
-	MatchIndexFromAppendEntriesRequest int  `json:"matchIndex"`
+	Success                            bool   `json:"success"` // true if follower appended entries successfully
+	Term                               int    `json:"term"`    // currentTerm, for leader to update itself
+	MatchIndexFromAppendEntriesRequest int    `json:"matchIndex"`
+	NodenameWhereProcessed             string `json:"nodenameWhereProcessed"`
+	NodenameFromRequest                string `json:"nodenameFromRequest"`
 }
 
 type AppendEntriesRequest struct {
