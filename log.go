@@ -129,7 +129,7 @@ func (l *Log) AppendEntries(params AppendEntriesParams) error {
 		return err
 	}
 
-	pass := l.passConsistencyCheck(params)
+	pass := l.consistencyCheck(params)
 	if !pass {
 		return errors.New("consistency check failed")
 	}
@@ -138,7 +138,7 @@ func (l *Log) AppendEntries(params AppendEntriesParams) error {
 	return nil
 }
 
-func (l *Log) passConsistencyCheck(params AppendEntriesParams) bool {
+func (l *Log) consistencyCheck(params AppendEntriesParams) bool {
 	latestEntry := l.LogLatestEntry()
 
 	// 3) Special case: Appending new log entries at the start of the log needs to work

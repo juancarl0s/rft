@@ -645,7 +645,7 @@ func TestLog_passConsistencyCheck(t *testing.T) {
 				Entries:     tt.fields.Entries,
 				EntriesLock: tt.fields.Lock,
 			}
-			if got := l.passConsistencyCheck(tt.args.params); got != tt.want {
+			if got := l.consistencyCheck(tt.args.params); got != tt.want {
 				t.Errorf("Log.passConsistencyCheck() = %v, want %v", got, tt.want)
 			}
 		})
