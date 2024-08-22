@@ -21,8 +21,8 @@ type Log struct {
 	// CurrentTerm int // latest term server has seen, maybe this should be in the Server struct?
 	// VotedFor	string // later, maybe this should be in the Server struct?
 
-	Entries Entries
-	Lock    sync.Mutex
+	Entries     Entries
+	EntriesLock sync.Mutex
 
 	// EntryLookup map[int]*Entry
 }
@@ -30,8 +30,8 @@ type Log struct {
 func NewLog() *Log {
 	log := &Log{
 		// CurrentTerm: 0,
-		Entries: Entries{},
-		Lock:    sync.Mutex{},
+		Entries:     Entries{},
+		EntriesLock: sync.Mutex{},
 	}
 
 	return log
@@ -73,8 +73,8 @@ func (l *Log) LogLatestEntry() *Entry {
 }
 
 func (l *Log) AppendCommand(term int, cmd string) {
-	l.Lock.Lock()
-	defer l.Lock.Unlock()
+	l.EntriesLock.Lock()
+	defer l.EntriesLock.Unlock()
 
 	var idx int
 
@@ -91,11 +91,21 @@ func (l *Log) AppendCommand(term int, cmd string) {
 	l.Entries = append(l.Entries, newEntry)
 }
 
-func (l *Log) GetEntries(fromIdx int) Entries {
-	l.Lock.Lock()
-	defer l.Lock.Unlock()
+func (l *Log) GetEntriesCopyUNSAFE(fromIdx int) Entries {
+	entries := Entries{}
+	for i := fromIdx; i < len(l.Entries); i++ {
+		entries = append(entries, l.Entries[i])
+	}
 
-	return l.Entries[fromIdx:]
+	return entries
+}
+
+func (l *Log) Lock() {
+	l.EntriesLock.Lock()
+}
+
+func (l *Log) UnLock() {
+	l.EntriesLock.Unlock()
 }
 
 // TODO: remove Current term from Log
@@ -112,8 +122,8 @@ func (l *Log) AppendEntries(params AppendEntriesParams) error {
 	// 	l.CurrentTerm = params.LeaderTerm
 	// }
 
-	l.Lock.Lock()
-	defer l.Lock.Unlock()
+	l.EntriesLock.Lock()
+	defer l.EntriesLock.Unlock()
 
 	if err := params.Valid(); err != nil {
 		return err
@@ -134,7 +144,9 @@ func (l *Log) passConsistencyCheck(params AppendEntriesParams) bool {
 	// 3) Special case: Appending new log entries at the start of the log needs to work
 	// TODO: REVISAR!
 	if latestEntry == nil {
-		if params.Entries[0].Idx == 0 {
+		if len(params.Entries) == 0 { //first appendEndtries (heartbeat)
+			return true
+		} else if params.Entries[0].Idx == 0 { //first appendEndtries (non-heartbeat) with entries
 			return true
 		} else {
 			return false

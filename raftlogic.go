@@ -29,6 +29,16 @@ type RaftLogic struct {
 }
 
 func NewRaftLogic(nodename string, role string, term int) *RaftLogic {
+	nextIdx := map[string]int{}
+	matchIds := map[string]int{}
+	for name := range SERVERS {
+		if name == nodename {
+			continue
+		}
+		nextIdx[name] = 0
+		matchIds[name] = 0
+	}
+
 	rf := &RaftLogic{
 		Nodename:    nodename,
 		clusterSize: len(SERVERS),
@@ -155,29 +165,64 @@ func (rf *RaftLogic) SendAppendEntriesToAllFollowers() {
 		panic("Only leader can send AppendEntries to followers")
 	}
 	// For each follower
-	for name, addr := range SERVERS {
-		if name == rf.Nodename {
+	for nodename, _ := range SERVERS {
+		if nodename == rf.Nodename {
 			continue
 		}
 
-		// TODO: Implement this
-		nextIdx := rf.nextIdx[name]
-		entries := rf.Log.GetEntries(nextIdx)
-		go rf.SendAppendEntryToFollower(addr, AppendEntriesParams{
-			Entries: entries,
-		})
+		go rf.SendAppendEntryToFollower(nodename)
 	}
 	fmt.Println("SendAppendEntriesToAllFollowers() done")
 }
 
-func (rf *RaftLogic) SendAppendEntryToFollower(addr string, params AppendEntriesParams) {
+func (rf *RaftLogic) SendAppendEntryToFollower(nodename string) {
+	rf.Log.Lock()
+	defer rf.Log.UnLock()
+	// TODO: Implement this
+
+	followerNextIdx := rf.nextIdx[nodename]
+
+	var prevLogIdx int
+	if len(rf.Log.Entries) == 0 {
+		prevLogIdx = 0
+	} else {
+		prevLogIdx = rf.Log.Entries[followerNextIdx-1].Idx
+	}
+
+	var prevLogTerm int
+	if len(rf.Log.Entries) == 0 {
+		prevLogTerm = rf.currentTerm
+	} else {
+		if prevLogIdx == -1 { // Special case for first entry :(
+			prevLogTerm = 0
+		} else {
+			prevLogTerm = rf.Log.Entries[prevLogIdx].Term
+		}
+	}
+
+	entries := Entries{}
+	if len(rf.Log.Entries[followerNextIdx:]) > 0 {
+		entries = rf.Log.GetEntriesCopyUNSAFE(followerNextIdx)
+	}
+
+	params := AppendEntriesParams{
+		LeaderTerm: rf.currentTerm,
+		LeaderID:   rf.Nodename, // we only send AppendEntries if we're the leader
+
+		PrevLogIdx:  prevLogIdx,
+		PrevLogTerm: prevLogTerm,
+
+		Entries: entries,
+
+		LeaderCommitIdx: rf.commitIdx,
+	}
 	jsonData, err := json.Marshal(params)
 	if err != nil {
 		slog.Error("Error encoding JSON:", "error", err)
 		return
 	}
 
-	rf.send(addr, jsonData)
+	rf.send(SERVERS[nodename], jsonData)
 }
 
 func (rf *RaftLogic) send(addr string, msg []byte) {
