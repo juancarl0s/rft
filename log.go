@@ -1,7 +1,6 @@
 package rft
 
 import (
-	"errors"
 	"fmt"
 	"sync"
 )
@@ -36,33 +35,6 @@ func NewLog() *Log {
 	}
 
 	return log
-}
-
-type AppendEntriesParams struct {
-	LeaderTerm int    `json:"term"`     // Leader's term
-	LeaderID   string `json:"leaderID"` // This is the leader ID that (must have) originated this request.
-
-	PrevLogIdx  int `json:"prevLogIndex"` // Log index of the log entry immediately preceding new ones.
-	PrevLogTerm int `json:"prevLogTerm"`  // Term of the log entry immediately preceding new ones.
-
-	// EntriesIdxStart int // use this 0 for initial case?
-	Entries Entries `json:"entries"` // Log entries to store (empty for heartbeat)
-
-	LeaderCommitIdx int `json:"leaderCommit"` // (inclusive)
-}
-
-func (p AppendEntriesParams) Valid() error {
-	// Allow the initial case
-	if len(p.Entries) > 0 {
-		if p.Entries[0].Idx == 0 {
-			return nil
-		}
-		if p.LeaderCommitIdx >= p.Entries[0].Idx {
-			return errors.New("LeaderCommitIdx must be less than EntriesIndexStart")
-		}
-	}
-
-	return nil
 }
 
 func (l *Log) LogLatestEntry() *Entry {
@@ -110,8 +82,8 @@ func (l *Log) UnLock() {
 }
 
 // TODO: remove Current term from Log
-// Return the current term and an error
-func (l *Log) AppendEntries(params AppendEntriesParams) error {
+// Return the MatchIndex for the leader to update and an error
+func (l *Log) AppendEntries(params AppendEntriesRequest) (int, error) {
 	// Move to RaftLogic
 	// if params.LeaderTerm < l.CurrentTerm {
 	// 	return l.CurrentTerm, errors.New("leader's term is less than current term")
@@ -127,20 +99,27 @@ func (l *Log) AppendEntries(params AppendEntriesParams) error {
 	defer l.EntriesLock.Unlock()
 	// defer fmt.Printf("\n\nAppendEntriesParams: %+v\n\n", params)
 	// defer fmt.Printf("\n\n@@@@@@@@@@Log Entries: %+v\n\n", l.Entries)
-
+	matchIndex := 0
+	if len(l.Entries) > 0 {
+		matchIndex = l.Entries[len(l.Entries)-1].Idx
+	}
 	if err := params.Valid(); err != nil {
-		return err
+		return matchIndex, fmt.Errorf("invalid AppendEntriesRequest: %w", err)
 	}
 
 	if err := l.consistencyCheck(params); err != nil {
-		return fmt.Errorf("consistency check failed: %w", err)
+		return matchIndex, fmt.Errorf("consistency check failed: %w", err)
 	}
 	l.editEntries(params)
 
-	return nil
+	matchIndex = 0
+	if len(l.Entries) > 0 {
+		matchIndex = l.Entries[len(l.Entries)-1].Idx
+	}
+	return matchIndex, nil
 }
 
-func (l *Log) consistencyCheck(params AppendEntriesParams) error {
+func (l *Log) consistencyCheck(params AppendEntriesRequest) error {
 	latestEntry := l.LogLatestEntry()
 
 	// 3) Special case: Appending new log entries at the start of the log needs to work
@@ -171,7 +150,7 @@ func (l *Log) consistencyCheck(params AppendEntriesParams) error {
 	return nil
 }
 
-func (l *Log) editEntries(params AppendEntriesParams) {
+func (l *Log) editEntries(params AppendEntriesRequest) {
 	// 4) Append_entries() is "idempotent." That means that append_entries()
 	// can be called repeatedly with the same arguments and the end result
 	// is always the same

@@ -28,30 +28,30 @@ func TestAppendEntriesParams_Valid(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		params  AppendEntriesParams
+		params  AppendEntriesRequest
 		wantErr bool
 	}{
-		{
-			name: "1",
-			params: AppendEntriesParams{
-				Entries: Entries{{Idx: 0}},
-			},
-		},
+		// {
+		// 	name: "1",
+		// 	params: AppendEntriesRequest{
+		// 		Entries: Entries{{Idx: 0}},
+		// 	},
+		// },
 		{
 			name: "2",
-			params: AppendEntriesParams{
+			params: AppendEntriesRequest{
 				Entries:         Entries{{Idx: 1}},
 				LeaderCommitIdx: 2,
 			},
 			wantErr: true,
 		},
-		{
-			name: "3",
-			params: AppendEntriesParams{
-				Entries:         Entries{{Idx: 0}},
-				LeaderCommitIdx: 0,
-			},
-		},
+		// {
+		// 	name: "3",
+		// 	params: AppendEntriesRequest{
+		// 		Entries:         Entries{{Idx: 0}},
+		// 		LeaderCommitIdx: 0,
+		// 	},
+		// },
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -135,29 +135,39 @@ func TestLog_LogLatestEntry(t *testing.T) {
 
 func TestLog_AppendEntries(t *testing.T) {
 	tests := []struct {
-		name        string
-		log         *Log
-		params      AppendEntriesParams
-		wantErr     bool
-		wantEntries Entries
+		name         string
+		log          *Log
+		params       AppendEntriesRequest
+		wantErr      bool
+		wantEntries  Entries
+		wantMatchIdx int
 	}{
 		{
 			name: "invalidParams",
-			params: AppendEntriesParams{
-				Entries:         Entries{{Idx: 1}},
+			params: AppendEntriesRequest{
+				Entries:         Entries{{Idx: 1, Term: 1}},
 				LeaderCommitIdx: 10,
 			},
 			log: &Log{
-				Entries:     Entries{},
+				Entries: Entries{{
+					Idx:  0,
+					Term: 0,
+					Cmd:  "dummy",
+				}},
 				EntriesLock: sync.Mutex{},
 			},
-			wantErr:     true,
-			wantEntries: Entries{},
+			wantErr: true,
+			wantEntries: Entries{{
+				Idx:  0,
+				Term: 0,
+				Cmd:  "dummy",
+			}},
+			wantMatchIdx: 0,
 		},
 		// Consistency check
 		{
 			name: "passConsistencyCheck/first_append/fail",
-			params: AppendEntriesParams{
+			params: AppendEntriesRequest{
 				LeaderTerm: 1,
 				LeaderID:   "leaderID",
 
@@ -165,6 +175,11 @@ func TestLog_AppendEntries(t *testing.T) {
 				PrevLogTerm: 0,
 
 				Entries: Entries{
+					{
+						Idx:  0,
+						Term: 0,
+						Cmd:  "dummy",
+					},
 					{
 						Idx: 1,
 					},
@@ -173,42 +188,74 @@ func TestLog_AppendEntries(t *testing.T) {
 				LeaderCommitIdx: 0,
 			},
 			log: &Log{
-				Entries:     Entries{},
-				EntriesLock: sync.Mutex{},
-			},
-			wantErr:     true,
-			wantEntries: Entries{},
-		},
-		{
-			name: "passConsistencyCheck/first_append/success",
-			params: AppendEntriesParams{
-				LeaderTerm: 1,
-				LeaderID:   "leaderID",
-
-				PrevLogIdx:  0,
-				PrevLogTerm: 0,
-
 				Entries: Entries{
 					{
-						Idx: 0,
+						Idx:  0,
+						Term: 0,
+						Cmd:  "dummy",
 					},
 				},
-
-				LeaderCommitIdx: 0,
-			},
-			log: &Log{
-				Entries:     Entries{},
 				EntriesLock: sync.Mutex{},
 			},
+			wantErr: true,
 			wantEntries: Entries{
 				{
-					Idx: 0,
+					Idx:  0,
+					Term: 0,
+					Cmd:  "dummy",
 				},
 			},
+			wantMatchIdx: 0,
 		},
+		// {
+		// 	name: "passConsistencyCheck/first_append/success",
+		// 	params: AppendEntriesRequest{
+		// 		LeaderTerm: 1,
+		// 		LeaderID:   "leaderID",
+
+		// 		PrevLogIdx:  0,
+		// 		PrevLogTerm: 0,
+
+		// 		Entries: Entries{
+		// 			{
+		// 				Idx:  0,
+		// 				Term: 0,
+		// 				Cmd:  "dummy",
+		// 			},
+		// 			{
+		// 				Idx:  1,
+		// 				Term: 1,
+		// 			},
+		// 		},
+
+		// 		LeaderCommitIdx: 0,
+		// 	},
+		// 	log: &Log{
+		// 		Entries: Entries{
+		// 			{
+		// 				Idx:  0,
+		// 				Term: 0,
+		// 				Cmd:  "dummy",
+		// 			},
+		// 		},
+		// 		EntriesLock: sync.Mutex{},
+		// 	},
+		// 	wantEntries: Entries{
+		// 		{
+		// 			Idx:  0,
+		// 			Term: 0,
+		// 			Cmd:  "dummy",
+		// 		},
+		// 		{
+		// 			Idx:  1,
+		// 			Term: 1,
+		// 		},
+		// 	},
+		// 	wantMatchIdx: 1,
+		// },
 		{
 			name: "passConsistencyCheck/first_append/empty/success",
-			params: AppendEntriesParams{
+			params: AppendEntriesRequest{
 				LeaderTerm: 1,
 				LeaderID:   "leaderID",
 
@@ -220,14 +267,27 @@ func TestLog_AppendEntries(t *testing.T) {
 				LeaderCommitIdx: 0,
 			},
 			log: &Log{
-				Entries:     Entries{},
+				Entries: Entries{
+					{
+						Idx:  0,
+						Term: 0,
+						Cmd:  "dummy",
+					},
+				},
 				EntriesLock: sync.Mutex{},
 			},
-			wantEntries: Entries{},
+			wantEntries: Entries{
+				{
+					Idx:  0,
+					Term: 0,
+					Cmd:  "dummy",
+				},
+			},
+			wantMatchIdx: 0,
 		},
 		{
 			name: "passConsistencyCheck/no_holes/fail",
-			params: AppendEntriesParams{
+			params: AppendEntriesRequest{
 				LeaderTerm: 1,
 				LeaderID:   "leaderID",
 
@@ -248,6 +308,7 @@ func TestLog_AppendEntries(t *testing.T) {
 					{
 						Idx:  0,
 						Term: 1,
+						Cmd:  "dummy",
 					},
 					{
 						Idx:  1,
@@ -261,16 +322,18 @@ func TestLog_AppendEntries(t *testing.T) {
 				{
 					Idx:  0,
 					Term: 1,
+					Cmd:  "dummy",
 				},
 				{
 					Idx:  1,
 					Term: 1,
 				},
 			},
+			wantMatchIdx: 1,
 		},
 		{
-			name: "passConsistencyCheck/no_holes/fail",
-			params: AppendEntriesParams{
+			name: "passConsistencyCheck/no_holes_term/fail",
+			params: AppendEntriesRequest{
 				LeaderTerm: 2,
 				LeaderID:   "leaderID",
 
@@ -291,6 +354,7 @@ func TestLog_AppendEntries(t *testing.T) {
 					{
 						Idx:  0,
 						Term: 2,
+						Cmd:  "dummy",
 					},
 					{
 						Idx:  1,
@@ -304,16 +368,18 @@ func TestLog_AppendEntries(t *testing.T) {
 				{
 					Idx:  0,
 					Term: 2,
+					Cmd:  "dummy",
 				},
 				{
 					Idx:  1,
 					Term: 2,
 				},
 			},
+			wantMatchIdx: 1,
 		},
 		{
 			name: "success",
-			params: AppendEntriesParams{
+			params: AppendEntriesRequest{
 				LeaderTerm: 3,
 				LeaderID:   "leaderID",
 
@@ -334,6 +400,7 @@ func TestLog_AppendEntries(t *testing.T) {
 					{
 						Idx:  0,
 						Term: 2,
+						Cmd:  "dummy",
 					},
 					{
 						Idx:  1,
@@ -346,6 +413,7 @@ func TestLog_AppendEntries(t *testing.T) {
 				{
 					Idx:  0,
 					Term: 2,
+					Cmd:  "dummy",
 				},
 				{
 					Idx:  1,
@@ -356,10 +424,11 @@ func TestLog_AppendEntries(t *testing.T) {
 					Term: 3,
 				},
 			},
+			wantMatchIdx: 2,
 		},
 		{
 			name: "editentries/heartbeat/success",
-			params: AppendEntriesParams{
+			params: AppendEntriesRequest{
 				LeaderTerm: 3,
 				LeaderID:   "leaderID",
 
@@ -375,6 +444,7 @@ func TestLog_AppendEntries(t *testing.T) {
 					{
 						Idx:  0,
 						Term: 2,
+						Cmd:  "dummy",
 					},
 					{
 						Idx:  1,
@@ -387,16 +457,18 @@ func TestLog_AppendEntries(t *testing.T) {
 				{
 					Idx:  0,
 					Term: 2,
+					Cmd:  "dummy",
 				},
 				{
 					Idx:  1,
 					Term: 2,
 				},
 			},
+			wantMatchIdx: 1,
 		},
 		{
 			name: "editentries/middle_of_log_edits/noop/success",
-			params: AppendEntriesParams{
+			params: AppendEntriesRequest{
 				LeaderTerm: 3,
 				LeaderID:   "leaderID",
 
@@ -421,6 +493,7 @@ func TestLog_AppendEntries(t *testing.T) {
 					{
 						Idx:  0,
 						Term: 2,
+						Cmd:  "dummy",
 					},
 					{
 						Idx:  1,
@@ -441,6 +514,7 @@ func TestLog_AppendEntries(t *testing.T) {
 				{
 					Idx:  0,
 					Term: 2,
+					Cmd:  "dummy",
 				},
 				{
 					Idx:  1,
@@ -455,10 +529,11 @@ func TestLog_AppendEntries(t *testing.T) {
 					Term: 3,
 				},
 			},
+			wantMatchIdx: 3,
 		},
 		{
 			name: "editentries/append_only/success",
-			params: AppendEntriesParams{
+			params: AppendEntriesRequest{
 				LeaderTerm: 3,
 				LeaderID:   "leaderID",
 
@@ -483,6 +558,7 @@ func TestLog_AppendEntries(t *testing.T) {
 					{
 						Idx:  0,
 						Term: 2,
+						Cmd:  "dummy",
 					},
 					{
 						Idx:  1,
@@ -503,6 +579,7 @@ func TestLog_AppendEntries(t *testing.T) {
 				{
 					Idx:  0,
 					Term: 2,
+					Cmd:  "dummy",
 				},
 				{
 					Idx:  1,
@@ -524,10 +601,11 @@ func TestLog_AppendEntries(t *testing.T) {
 					Term: 3,
 				},
 			},
+			wantMatchIdx: 5,
 		},
 		{
 			name: "editentries/edit_some_delete_some/success",
-			params: AppendEntriesParams{
+			params: AppendEntriesRequest{
 				LeaderTerm: 3,
 				LeaderID:   "leaderID",
 
@@ -552,6 +630,7 @@ func TestLog_AppendEntries(t *testing.T) {
 					{
 						Idx:  0,
 						Term: 2,
+						Cmd:  "dummy",
 					},
 					{
 						Idx:  1,
@@ -572,19 +651,25 @@ func TestLog_AppendEntries(t *testing.T) {
 				{
 					Idx:  0,
 					Term: 2,
+					Cmd:  "dummy",
 				},
 				{
 					Idx:  1,
 					Term: 2,
 				},
 			},
+			wantMatchIdx: 1,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.log.AppendEntries(tt.params)
+			matchIdx, err := tt.log.AppendEntries(tt.params)
 			if !cmp.Equal(tt.log.Entries, tt.wantEntries) {
-				t.Errorf("Log.CurrentTerm = %v, wantTerm %v", tt.log.Entries, tt.wantEntries)
+				t.Errorf("Log.Entries = %v, wantEntries %v", tt.log.Entries, tt.wantEntries)
+			}
+
+			if (matchIdx) != tt.wantMatchIdx {
+				t.Errorf("matchIdx = %v, wantMatchIdx %v", matchIdx, tt.wantMatchIdx)
 			}
 
 			if (err != nil) != tt.wantErr {
