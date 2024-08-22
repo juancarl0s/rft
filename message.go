@@ -2,10 +2,16 @@ package rft
 
 import "errors"
 
+var (
+	APPEND_ENTRIES_MSG = "AppendEntriesRequest"
+	SUBMIT_COMMAND_MSG = "SubmitCommand"
+)
+
 type Message struct {
-	MsgType               string                // "AppendEntriesRequest"
-	AppendEntriesRequest  AppendEntriesRequest  `json:"appendEntriesRequest,omitempty"`
-	AppendEntriesResponse AppendEntriesResponse `json:"appendEntriesResponse,omitempty"`
+	MsgType               string                 `json:"messageType,omitempty"`
+	SubmitCommandRequest  *string                `json:"submitCommand,omitempty"`
+	AppendEntriesRequest  *AppendEntriesRequest  `json:"appendEntriesRequest,omitempty"`
+	AppendEntriesResponse *AppendEntriesResponse `json:"appendEntriesResponse,omitempty"`
 }
 
 type AppendEntriesResponse struct {

@@ -81,17 +81,17 @@ func (rf *RaftLogic) SubmitNewCommand(cmd string) {
 	rf.Log.AppendCommand(rf.currentTerm, cmd)
 }
 
-func (rf *RaftLogic) ReceiveAppendEntries(appendEntries AppendEntriesParams) {
-	if appendEntries.LeaderTerm < rf.currentTerm {
-		// TODO: Reply false
-		return
-	} else if appendEntries.LeaderTerm > rf.currentTerm {
-		rf.currentTerm = appendEntries.LeaderTerm
-	}
+// func (rf *RaftLogic) ReceiveAppendEntries(appendEntries AppendEntriesRequest) {
+// 	if appendEntries.LeaderTerm < rf.currentTerm {
+// 		// TODO: Reply false
+// 		return
+// 	} else if appendEntries.LeaderTerm > rf.currentTerm {
+// 		rf.currentTerm = appendEntries.LeaderTerm
+// 	}
 
-	// Append entries to log
-	rf.Log.AppendEntries(appendEntries)
-}
+// 	// Append entries to log
+// 	rf.Log.AppendEntries(appendEntries)
+// }
 
 func (rf *RaftLogic) receive() {
 	addr, exists := SERVERS[rf.Nodename]
@@ -124,24 +124,29 @@ func (rf *RaftLogic) handleMsg(conn net.Conn) {
 	defer conn.Close()
 
 	for {
-		msg, err := Rcv_msg(conn)
+		msgBytes, err := Rcv_msg(conn)
 		if err != nil {
 			slog.Error("Error receiving message:", "error", err)
 			continue
 		}
 
-		var params AppendEntriesParams
-		err = json.Unmarshal(msg, &params)
+		var msg Message
+		err = json.Unmarshal(msgBytes, &msg)
 		if err != nil {
 			slog.Error("Error decoding JSON:", "error", err)
 			return
 		}
 
-		err = rf.Log.AppendEntries(params)
-		if err != nil {
-			slog.Error("Error in AppendEntries", "error", err)
+		if msg.AppendEntriesRequest == nil {
+			panic("AppendEntriesRequest can't be nil")
 		}
-		slog.Debug("AppendEntries result", "error", err)
+		if msg.MsgType == APPEND_ENTRIES_MSG {
+			_, err = rf.Log.AppendEntries(*msg.AppendEntriesRequest)
+			if err != nil {
+				slog.Error("Error in AppendEntries", "error", err)
+			}
+			slog.Debug("AppendEntries result", "error", err)
+		}
 	}
 }
 
@@ -207,7 +212,7 @@ func (rf *RaftLogic) SendAppendEntryToFollower(nodename string) {
 		entries = rf.Log.GetEntriesCopyUNSAFE(followerNextIdx)
 	}
 
-	params := AppendEntriesParams{
+	params := AppendEntriesRequest{
 		LeaderTerm: rf.currentTerm,
 		LeaderID:   rf.Nodename, // we only send AppendEntries if we're the leader
 
