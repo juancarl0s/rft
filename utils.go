@@ -73,6 +73,5 @@ func Send(conn net.Conn, msg []byte) error {
 		fmt.Println("Error sending message:", err)
 		return err
 	}
-
 	return nil
 }
