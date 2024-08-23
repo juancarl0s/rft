@@ -118,10 +118,10 @@ func (rf *RaftLogic) Heartbeats(duration time.Duration) {
 		select {
 		case <-ticker.C:
 			if rf.Role == "leader" {
-				slog.Info("Sending heartbeats")
+				// slog.Info("Sending heartbeats")
 				rf.Commit()
-				fmt.Printf("\n========== rf %+v\n", rf)
-				fmt.Printf("\n========== entries %+v\n", rf.Log.Entries)
+				// fmt.Printf("\n========== rf %+v\n", rf)
+				// fmt.Printf("\n========== entries %+v\n", rf.Log.Entries)
 				rf.runStateMatchineCommands()
 				rf.Beat()
 			}
@@ -159,6 +159,9 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 		}
 
 		if msg.MsgType == SUBMIT_COMMAND_MSG && msg.SubmitCommandRequest != nil && *msg.SubmitCommandRequest == "log" {
+			// spew.Dump(rf.Log.Entries)
+			// spew.Dump(rf)
+			// spew.Dump(rf.stateMachineCommandHandler.String())
 			fmt.Printf("\n\nLog.Entries:\n%+v\n\n", rf.Log.Entries)
 			fmt.Printf("RaftServer:\n%+v\n\n", rf)
 			fmt.Printf("KVStore:\n%+v\n\n", rf.stateMachineCommandHandler.String())
@@ -182,7 +185,7 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 				// rf.SendAppendEntriesToAllFollowers()
 
 			} else if msg.MsgType == APPEND_ENTRIES_RESPONSE_MSG {
-				fmt.Printf("\n========== msg %+v\n", *msg.AppendEntriesResponse)
+				// fmt.Printf("\n========== msg %+v\n", *msg.AppendEntriesResponse)
 				rf.handleAppendEntriesResponse(*msg.AppendEntriesResponse)
 			} else {
 				slog.Error("Invalid message type", "msgType", msg.MsgType, "msg", msg)
@@ -244,7 +247,7 @@ func (rf *RaftLogic) handleAppendEntriesResponse(res AppendEntriesResponse) {
 	} else {
 		resNextIdx := res.MatchIndexFromAppendEntriesRequest + 1
 		resMatchIdx := res.MatchIndexFromAppendEntriesRequest
-		fmt.Printf("\n===@@======= resMatchIdx %+v\n", resMatchIdx)
+		// fmt.Printf("\n===@@======= resMatchIdx %+v\n", resMatchIdx)
 
 		rf.macthIdxs[res.NodenameWhereProcessed] = resMatchIdx
 		rf.nextIdxs[res.NodenameWhereProcessed] = resNextIdx
@@ -261,15 +264,16 @@ func (rf *RaftLogic) Commit() {
 	}
 
 	sort.Ints(nodeMatchIdx)
-	fmt.Println("nodeMatchIdx !!!!!!!!!!!!!", nodeMatchIdx)
+	// fmt.Println("nodeMatchIdx !!!!!!!!!!!!!", nodeMatchIdx)
 
 	minimunMatchIdxInMajority := nodeMatchIdx[len(nodeMatchIdx)/2]
 	if rf.Log.Len() < minimunMatchIdxInMajority {
-		fmt.Println("CALL AN ELECTION NOW!!!!")
+		// TODO: juan
+		fmt.Println("CALL AN ELECTION NOW!!!!") //?????
 	}
 
 	if rf.commitIdx >= minimunMatchIdxInMajority {
-		slog.Info("No index to commit")
+		// slog.Info("No index to commit")
 		return
 	}
 
@@ -313,7 +317,7 @@ func (rf *RaftLogic) handleAppendEntriesRequest(msg Message) AppendEntriesRespon
 		rf.runStateMatchineCommands()
 	}
 
-	fmt.Println("========== commitIdx, lastAppliedIdx", rf.commitIdx, rf.lastAppliedIdx)
+	// fmt.Println("========== commitIdx, lastAppliedIdx", rf.commitIdx, rf.lastAppliedIdx)
 
 	// Respond to leader with the AppendEntriesResult
 	return AppendEntriesResponse{
@@ -330,7 +334,7 @@ func (rf *RaftLogic) runStateMatchineCommands() {
 		cmdsToRun := rf.Log.GetEntriesSlice(rf.lastAppliedIdx, rf.commitIdx+1)
 
 		for _, cmd := range cmdsToRun {
-			fmt.Printf("\nCMD: %+v", cmd)
+			// fmt.Printf("\nCMD: %+v", cmd)
 			_, err := rf.stateMachineCommandHandler.HandleCommand(cmd.Cmd)
 			if err != nil {
 				slog.Error("Error running state machine command", "error", err)
@@ -367,7 +371,7 @@ func (rf *RaftLogic) SendAppendEntryToFollower(nodename string) {
 		rf.nextIdxs[nodename] = followerNextIdx
 	}
 
-	fmt.Printf("\n%+v\n", rf)
+	// fmt.Printf("\n%+v\n", rf)
 	var prevLogIdx int
 	if len(rf.Log.Entries) == 0 {
 		prevLogIdx = 0
