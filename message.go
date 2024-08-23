@@ -3,15 +3,22 @@ package rft
 var (
 	APPEND_ENTRIES_MSG          = "AppendEntriesRequest"
 	APPEND_ENTRIES_RESPONSE_MSG = "AppendEntriesResponse"
-	SUBMIT_COMMAND_MSG          = "SubmitCommand"
+
+	VOTE_REQUEST_MSG  = "VoteRequest"
+	VOTE_RESPONSE_MSG = "VoteResponse"
+
+	SUBMIT_COMMAND_MSG = "SubmitCommand"
 )
 
 // Every communication between servers in the Raft cluster is to be done via a Message (i.e. using the below type).
 type Message struct {
-	MsgType               string                 `json:"messageType,omitempty"`
+	MsgType string `json:"messageType,omitempty"`
+
 	SubmitCommandRequest  *string                `json:"submitCommand,omitempty"`
 	AppendEntriesRequest  *AppendEntriesRequest  `json:"appendEntriesRequest,omitempty"`
 	AppendEntriesResponse *AppendEntriesResponse `json:"appendEntriesResponse,omitempty"`
+	VoteRequest           *VoteRequest           `json:"requestVote,omitempty"`
+	VoteResponse          *VoteResponse          `json:"voteResponse,omitempty"`
 }
 
 type AppendEntriesResponse struct {
@@ -32,4 +39,18 @@ type AppendEntriesRequest struct {
 	Entries Entries `json:"entries"` // Log entries to store (empty for heartbeat)
 
 	LeaderCommitIdx int `json:"leaderCommit"` // (inclusive)
+}
+
+type VoteRequest struct {
+	Term        int    `json:"term"`        // Candidate's term
+	CandidateID string `json:"candidateID"` // Candidate requesting vote.
+
+	LastLogIdx  int `json:"lastLogIndex"` // Index of candidate's last log entry.
+	LastLogTerm int `json:"lastLogTerm"`  // Term of candidate's last log entry.
+}
+
+type VoteResponse struct {
+	Term        int    `json:"term"`        // Current term, for candidate to update itself.
+	VoteGranted bool   `json:"voteGranted"` // True means candidate received vote.
+	VoterID     string `json:"voterID"`     // The ID of the server that granted the vote.
 }

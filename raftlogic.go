@@ -10,9 +10,9 @@ import (
 	"sort"
 	"sync"
 	"time"
-)
 
-// TODO: apply commands and update lastAppliedIdx accoirdingly
+	"math/rand"
+)
 
 type RaftLogic struct {
 	// Cluster config details
@@ -23,8 +23,7 @@ type RaftLogic struct {
 
 	// Persistent state on all servers
 	currentTerm int // initialized to 0 on first boot, increases monotonically
-	// votedFor string
-	Log *Log
+	Log         *Log
 
 	// Volatile state on all servers
 	commitIdx      int // initialized to 0, increases monotonically
@@ -34,9 +33,20 @@ type RaftLogic struct {
 	nextIdxs  map[string]int // for each server, index of the next log entry to send to that server (initialized to leader last log index + 1)
 	macthIdxs map[string]int // for each server, index of highest log entry known to be replicated on server (initialized to 0, increases monotonically)
 
-	volatileStateLock sync.Mutex //Used when changing commitIdx and lastAppliedIdx
+	// Voting stuff
+	votesForMe int // Number of votes received
+	// votedFor          map[string]struct{} // By nodename
+	votedFor          string     // By nodename
+	volatileStateLock sync.Mutex // Used when changing commitIdx and lastAppliedIdx
 
 	stateMachineCommandHandler CommandHandler
+
+	timerToCallForElection         *time.Ticker
+	timerDurationToCallForElection time.Duration
+}
+
+type candidacy struct {
+	votedFor string
 }
 
 type CommandHandler interface {
@@ -61,6 +71,9 @@ func NewRaftLogic(nodename string, role string, term int) *RaftLogic {
 		macthIdxs: map[string]int{},
 
 		volatileStateLock: sync.Mutex{},
+
+		votesForMe: 0,
+		votedFor:   "",
 	}
 
 	rf.Log.AppendCommand(0, "initial_dummy_command arg")
@@ -77,7 +90,58 @@ func NewRaftLogic(nodename string, role string, term int) *RaftLogic {
 	return rf
 }
 
+func (rf *RaftLogic) BecomeCandidateAnRequestVotes() {
+	rf.volatileStateLock.Lock()
+
+	rf.currentTerm++
+
+	// Vote for self
+	rf.votesForMe = 1
+	rf.votedFor = ""
+
+	rf.Role = "candidate"
+
+	rf.volatileStateLock.Unlock()
+
+	for nodename, _ := range SERVERS {
+		if nodename == rf.Nodename {
+			continue
+		}
+		go rf.SendVoteRequest(nodename)
+	}
+}
+
+func (rf *RaftLogic) SendVoteRequest(nodename string) {
+	req := VoteRequest{
+		Term:        rf.currentTerm,
+		CandidateID: rf.Nodename,
+		LastLogIdx:  rf.Log.Len() - 1,
+		LastLogTerm: rf.Log.LastTerm(),
+	}
+	msg := Message{
+		MsgType:     VOTE_REQUEST_MSG,
+		VoteRequest: &req,
+	}
+	jsonData, err := json.Marshal(msg)
+	if err != nil {
+		slog.Error("Error encoding JSON:", "error", err)
+		return
+	}
+
+	rf.send(SERVERS[nodename], jsonData)
+}
+
+func (rf *RaftLogic) BecomeFollower() {
+	rf.volatileStateLock.Lock()
+	defer rf.volatileStateLock.Unlock()
+
+	rf.Role = "follower"
+}
+
 func (rf *RaftLogic) BecomeLeader() {
+	// rf.volatileStateLock.Lock()
+	// defer rf.volatileStateLock.Unlock()
+
 	rf.Role = "leader"
 }
 
@@ -95,20 +159,21 @@ func (rf *RaftLogic) SubmitNewCommand(cmd string) {
 	_ = rf.Log.AppendCommand(rf.currentTerm, cmd)
 }
 
-func (rf *RaftLogic) Listen(listener net.Listener, stateMachineCommandHandler CommandHandler) {
-	rf.stateMachineCommandHandler = stateMachineCommandHandler
-
-	go rf.Heartbeats(3 * time.Second)
-
+func (rf *RaftLogic) ElectionCalling() {
+	rf.volatileStateLock.Lock()
+	rf.timerDurationToCallForElection = generateRandomElectionCallingDuration()
+	rf.timerToCallForElection = time.NewTicker(rf.timerDurationToCallForElection)
+	rf.volatileStateLock.Unlock()
 	for {
-		// Accept a new connection
-		conn, err := listener.Accept()
-		if err != nil {
-			slog.Error("Error accepting connection:", "error", err)
-			continue
+		select {
+		case <-rf.timerToCallForElection.C:
+			if rf.Role != "leader" {
+				rf.timerDurationToCallForElection = generateRandomElectionCallingDuration()
+				rf.BecomeCandidateAnRequestVotes()
+				fmt.Printf("\nCALLING FOR ELECTION!! term: %+v, newTimeout: %+v\n", rf.currentTerm, rf.timerDurationToCallForElection)
+				// fmt.Printf("\n rf %+v\n", rf)
+			}
 		}
-
-		go rf.HandleIncomingMsg(conn)
 	}
 }
 
@@ -118,6 +183,7 @@ func (rf *RaftLogic) Heartbeats(duration time.Duration) {
 		select {
 		case <-ticker.C:
 			if rf.Role == "leader" {
+				fmt.Println("♥")
 				// slog.Info("Sending heartbeats")
 				rf.Commit()
 				// fmt.Printf("\n========== rf %+v\n", rf)
@@ -135,6 +201,33 @@ func (rf *RaftLogic) Beat() {
 			continue
 		}
 		go rf.SendAppendEntryToFollower(nodename)
+	}
+}
+
+func generateRandomDuration(min, max int) time.Duration {
+	return time.Duration((rand.Intn(max-min) + max)) * time.Second
+}
+func generateRandomElectionCallingDuration() time.Duration {
+	return generateRandomDuration(5, 10)
+}
+
+func (rf *RaftLogic) Listen(listener net.Listener, stateMachineCommandHandler CommandHandler) {
+	rf.stateMachineCommandHandler = stateMachineCommandHandler
+
+	go rf.Heartbeats(2 * time.Second)
+
+	// rand.Seed(time.Now().UnixNano())
+	// electionRandInt := rand.IntN(5-2) + 2
+	go rf.ElectionCalling()
+
+	for {
+		// Accept a new connection
+		conn, err := listener.Accept()
+		if err != nil {
+			slog.Error("Error accepting connection:", "error", err)
+			continue
+		}
+		go rf.HandleIncomingMsg(conn)
 	}
 }
 
@@ -158,6 +251,8 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 			return
 		}
 
+		// fmt.Printf("\n1<__________msg %+v\n", msg)
+
 		if msg.MsgType == SUBMIT_COMMAND_MSG && msg.SubmitCommandRequest != nil && *msg.SubmitCommandRequest == "log" {
 			// spew.Dump(rf.Log.Entries)
 			// spew.Dump(rf)
@@ -166,9 +261,18 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 			fmt.Printf("RaftServer:\n%+v\n\n", rf)
 			fmt.Printf("KVStore:\n%+v\n\n", rf.stateMachineCommandHandler.String())
 			if rf.Role == "leader" {
-				rf.ForwardLogCommandToFollowers()
-				Send(conn, []byte("OK"))
+				rf.ForwardLogCommandToEveryoneElse()
 			}
+			Send(conn, []byte("OK"))
+			// fmt.Printf("1__________>\n")
+			continue
+		}
+
+		if msg.MsgType == VOTE_REQUEST_MSG {
+			// fmt.Printf("\nVoteRequest:\n%+v\n\n", msg.VoteRequest)
+
+			res := rf.handleVoteRequest(*msg.VoteRequest)
+			rf.SendVoteResponse(msg.VoteRequest.CandidateID, res)
 			continue
 		}
 
@@ -183,23 +287,106 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 				rf.SubmitNewCommand(*msg.SubmitCommandRequest)
 				Send(conn, []byte("OK"))
 				// rf.SendAppendEntriesToAllFollowers()
-
 			} else if msg.MsgType == APPEND_ENTRIES_RESPONSE_MSG {
 				// fmt.Printf("\n========== msg %+v\n", *msg.AppendEntriesResponse)
 				rf.handleAppendEntriesResponse(*msg.AppendEntriesResponse)
 			} else {
 				slog.Error("Invalid message type", "msgType", msg.MsgType, "msg", msg)
 			}
-
 		} else if rf.Role == "follower" {
 			if msg.MsgType == APPEND_ENTRIES_MSG {
 				// fmt.Printf("\nReceived message:\n%+v\n\n", msg.AppendEntriesRequest)
 				appendEntriesResult := rf.handleAppendEntriesRequest(msg)
 				rf.SendAppendEntriesResponse(appendEntriesResult)
 			}
-		}
 
+			if msg.MsgType == SUBMIT_COMMAND_MSG && msg.SubmitCommandRequest != nil {
+				if rf.Role != "leader" {
+					Send(conn, []byte("NOT LEADER"))
+				}
+				continue
+			}
+		} else if rf.Role == "candidate" {
+			if msg.MsgType == VOTE_RESPONSE_MSG {
+				// fmt.Printf("\nVoteResponse:\n%+v\n\n", msg.VoteResponse)
+
+				rf.handleVoteResponse(*msg.VoteResponse)
+			}
+
+			if msg.MsgType == APPEND_ENTRIES_MSG {
+				if msg.AppendEntriesRequest.LeaderTerm >= rf.currentTerm {
+					rf.BecomeFollower()
+				}
+
+				// fmt.Printf("\nReceived message:\n%+v\n\n", msg.AppendEntriesRequest)
+				appendEntriesResult := rf.handleAppendEntriesRequest(msg)
+				rf.SendAppendEntriesResponse(appendEntriesResult)
+			}
+		}
 	}
+}
+
+func (rf *RaftLogic) handleVoteResponse(res VoteResponse) {
+	rf.volatileStateLock.Lock()
+	defer rf.volatileStateLock.Unlock()
+
+	if res.VoteGranted {
+		rf.votesForMe++
+
+		if rf.votesForMe > rf.clusterSize/2 {
+			rf.BecomeLeader()
+		}
+	}
+}
+
+func (rf *RaftLogic) handleVoteRequest(req VoteRequest) VoteResponse {
+	rf.volatileStateLock.Lock()
+	defer rf.volatileStateLock.Unlock()
+
+	if req.Term < rf.currentTerm {
+		return VoteResponse{
+			Term:        rf.currentTerm,
+			VoteGranted: false,
+			VoterID:     rf.Nodename,
+		}
+	}
+
+	if rf.votedFor == "" {
+		rf.votedFor = req.CandidateID
+		if req.Term >= rf.currentTerm {
+			return VoteResponse{
+				Term:        rf.currentTerm,
+				VoteGranted: true,
+				VoterID:     rf.Nodename,
+			}
+		}
+	}
+
+	return VoteResponse{
+		Term:        rf.currentTerm,
+		VoteGranted: false,
+		VoterID:     rf.Nodename,
+	}
+
+}
+
+func (rf *RaftLogic) SendVoteResponse(candidateId string, res VoteResponse) {
+	rf.volatileStateLock.Lock()
+	defer rf.volatileStateLock.Unlock()
+
+	msg := Message{
+		MsgType:      VOTE_RESPONSE_MSG,
+		VoteResponse: &res,
+	}
+	msgBytes, err := json.Marshal(msg)
+	if err != nil {
+		slog.Error("Error encoding appendEntriesResult JSON:", "error", err)
+		return
+	}
+
+	rf.send(SERVERS[candidateId], msgBytes)
+
+	return
 }
 
 // AppenEntries to local log
@@ -227,8 +414,9 @@ func (rf *RaftLogic) handleAppendEntriesResponse(res AppendEntriesResponse) {
 	}
 
 	if rf.Role != "leader" {
+		return
 		//TODO: handle this, this is not really true
-		panic("Only leader can receive AppendEntries to followers")
+		// panic("Only leader can receive AppendEntries to followers")
 	}
 
 	if res.Success {
@@ -282,33 +470,45 @@ func (rf *RaftLogic) Commit() {
 }
 
 func (rf *RaftLogic) handleAppendEntriesRequest(msg Message) AppendEntriesResponse {
+	// fmt.Println("------------ handleAppendEntriesRequest")
 	rf.volatileStateLock.Lock()
 	defer rf.volatileStateLock.Unlock()
-
-	// TODO: This is prob wrong, I must check if the terms are less than or more than.
-	serverCurrentTerm := rf.currentTerm
 
 	// AppendEntries to our log
 	if msg.AppendEntriesRequest == nil {
 		panic("AppendEntriesRequest can't be nil")
 	}
+
+	// if msg.AppendEntriesRequest.LeaderTerm >= serverCurrentTerm {
+	// }
+
 	// fmt.Printf("\n========== rf %+v\n", rf)
 	// fmt.Printf("========== rf.Log.Entries %+v\n", rf.Log.Entries)
 	// fmt.Printf("\n========== msg.AppendEntriesRequest %+v\n", msg.AppendEntriesRequest)
 	serverMatchIdx, err := rf.Log.AppendEntries(*msg.AppendEntriesRequest)
-	// fmt.Printf("\n========== serverMatchIdx %+v\n", serverMatchIdx)
-
+	rf.timerToCallForElection.Reset(rf.timerDurationToCallForElection)
 	if err != nil {
 		slog.Error("Error in AppendEntries", "error", err)
 		return AppendEntriesResponse{
 			Success:                            err == nil,
-			Term:                               serverCurrentTerm,
+			Term:                               rf.currentTerm,
 			MatchIndexFromAppendEntriesRequest: serverMatchIdx,
 			NodenameFromRequest:                msg.AppendEntriesRequest.LeaderID,
 			NodenameWhereProcessed:             rf.Nodename,
 		}
 	}
-	slog.Debug("AppendEntries result", "error", err)
+	// fmt.Printf("\n========== serverMatchIdx %+v\n", serverMatchIdx)
+	// slog.Debug("AppendEntries result", "error", err)
+
+	if msg.AppendEntriesRequest.LeaderTerm < rf.currentTerm {
+		return AppendEntriesResponse{
+			Success:                            false,
+			Term:                               rf.currentTerm,
+			MatchIndexFromAppendEntriesRequest: 0,
+			NodenameFromRequest:                msg.AppendEntriesRequest.LeaderID,
+			NodenameWhereProcessed:             rf.Nodename,
+		}
+	}
 
 	// Update commit index of server
 	if msg.AppendEntriesRequest.LeaderCommitIdx > rf.commitIdx && len(rf.Log.Entries) >= rf.commitIdx {
@@ -322,7 +522,7 @@ func (rf *RaftLogic) handleAppendEntriesRequest(msg Message) AppendEntriesRespon
 	// Respond to leader with the AppendEntriesResult
 	return AppendEntriesResponse{
 		Success:                            err == nil,
-		Term:                               serverCurrentTerm,
+		Term:                               rf.currentTerm,
 		MatchIndexFromAppendEntriesRequest: serverMatchIdx,
 		NodenameFromRequest:                msg.AppendEntriesRequest.LeaderID,
 		NodenameWhereProcessed:             rf.Nodename,
@@ -422,7 +622,7 @@ func (rf *RaftLogic) SendAppendEntryToFollower(nodename string) {
 	rf.send(SERVERS[nodename], jsonData)
 }
 
-func (rf *RaftLogic) ForwardLogCommandToFollowers() {
+func (rf *RaftLogic) ForwardLogCommandToEveryoneElse() {
 	if rf.Role != "leader" {
 		panic("Only leader can forward log command to followers")
 	}

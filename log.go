@@ -90,6 +90,13 @@ func (l *Log) Len() int {
 	return len(l.Entries)
 }
 
+func (l *Log) LastTerm() int {
+	l.EntriesLock.Lock()
+	defer l.EntriesLock.Unlock()
+
+	return l.Entries[len(l.Entries)-1].Term
+}
+
 // AppendEntries handles the AppendEntriesRequest by performing several steps:
 // 1. Locks the EntriesLock to ensure thread-safe access to the log entries.
 // 2. Initializes matchIndex to 0. If there are existing entries, sets matchIndex to the index of the last entry.
