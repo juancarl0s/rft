@@ -6,6 +6,7 @@ var (
 	SUBMIT_COMMAND_MSG          = "SubmitCommand"
 )
 
+// Every communication between servers in the Raft cluster is to be done via a Message (i.e. using the below type).
 type Message struct {
 	MsgType               string                 `json:"messageType,omitempty"`
 	SubmitCommandRequest  *string                `json:"submitCommand,omitempty"`
@@ -31,19 +32,4 @@ type AppendEntriesRequest struct {
 	Entries Entries `json:"entries"` // Log entries to store (empty for heartbeat)
 
 	LeaderCommitIdx int `json:"leaderCommit"` // (inclusive)
-}
-
-func (p AppendEntriesRequest) Valid() error {
-	// Allow the initial case
-	// if len(p.Entries) > 0 {
-	// 	// if p.Entries[0].Idx == 0 {
-	// 	// 	return nil
-	// 	// }
-
-	// 	if p.LeaderCommitIdx >= p.Entries[0].Idx {
-	// 		return errors.New("LeaderCommitIdx must be less than EntriesIndexStart")
-	// 	}
-	// }
-
-	return nil
 }

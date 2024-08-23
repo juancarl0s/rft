@@ -8,44 +8,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func TestAppendEntriesParams_Valid(t *testing.T) {
-
-	tests := []struct {
-		name    string
-		params  AppendEntriesRequest
-		wantErr bool
-	}{
-		// {
-		// 	name: "1",
-		// 	params: AppendEntriesRequest{
-		// 		Entries: Entries{{Idx: 0}},
-		// 	},
-		// },
-		// {
-		// 	name: "2",
-		// 	params: AppendEntriesRequest{
-		// 		Entries:         Entries{{Idx: 1}},
-		// 		LeaderCommitIdx: 2,
-		// 	},
-		// 	wantErr: true,
-		// },
-		// {
-		// 	name: "3",
-		// 	params: AppendEntriesRequest{
-		// 		Entries:         Entries{{Idx: 0}},
-		// 		LeaderCommitIdx: 0,
-		// 	},
-		// },
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if err := tt.params.Valid(); (err != nil) != tt.wantErr {
-				t.Errorf("AppendEntriesParams.Valid() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
 func TestLog_LogLatestEntry(t *testing.T) {
 	type fields struct {
 		CurrentTerm int
@@ -663,61 +625,3 @@ func TestLog_AppendEntries(t *testing.T) {
 		})
 	}
 }
-
-// func TestLog_heartbeat(t *testing.T) {
-// 	type fields struct {
-// 		CurrentTerm int
-// 		Entries     Entries
-// 		Lock        sync.Mutex
-// 	}
-// 	type args struct {
-// 		params AppendEntriesParams
-// 	}
-// 	tests := []struct {
-// 		name   string
-// 		fields fields
-// 		args   args
-// 	}{
-// 		// TODO: Add test cases.
-// 	}
-// 	for _, tt := range tests {
-// 		t.Run(tt.name, func(t *testing.T) {
-// 			l := &Log{
-// 				CurrentTerm: tt.fields.CurrentTerm,
-// 				Entries:     tt.fields.Entries,
-// 				Lock:        tt.fields.Lock,
-// 			}
-// 			l.heartbeat(tt.args.params)
-// 		})
-// 	}
-// }
-
-// func TestLog_passConsistencyCheck(t *testing.T) {
-// 	type fields struct {
-// 		CurrentTerm int
-// 		Entries     Entries
-// 		Lock        sync.Mutex
-// 	}
-// 	type args struct {
-// 		params AppendEntriesParams
-// 	}
-// 	tests := []struct {
-// 		name   string
-// 		fields fields
-// 		args   args
-// 		want   bool
-// 	}{
-// 		// TODO: Add test cases.
-// 	}
-// 	for _, tt := range tests {
-// 		t.Run(tt.name, func(t *testing.T) {
-// 			l := &Log{
-// 				Entries:     tt.fields.Entries,
-// 				EntriesLock: tt.fields.Lock,
-// 			}
-// 			if got := l.consistencyCheck(tt.args.params); got != tt.want {
-// 				t.Errorf("Log.passConsistencyCheck() = %v, want %v", got, tt.want)
-// 			}
-// 		})
-// 	}
-// }
