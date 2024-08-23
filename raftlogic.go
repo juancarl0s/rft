@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -155,8 +156,9 @@ func (rf *RaftLogic) SubmitNewCommand(cmd string) {
 	rf.nextIdxs[rf.Nodename]++
 	rf.macthIdxs[rf.Nodename]++
 
-	// rf.lastAppliedIdx = rf.Log.AppendCommand(rf.currentTerm, cmd)
-	_ = rf.Log.AppendCommand(rf.currentTerm, cmd)
+	if strings.HasPrefix(cmd, "set") || strings.HasPrefix(cmd, "delete") || strings.HasPrefix(cmd, "snapshot") || strings.HasPrefix(cmd, "restore") {
+		_ = rf.Log.AppendCommand(rf.currentTerm, cmd)
+	}
 }
 
 func (rf *RaftLogic) ElectionCalling() {
@@ -257,9 +259,14 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 			// spew.Dump(rf.Log.Entries)
 			// spew.Dump(rf)
 			// spew.Dump(rf.stateMachineCommandHandler.String())
-			fmt.Printf("\n\nLog.Entries:\n%+v\n\n", rf.Log.Entries)
-			fmt.Printf("RaftServer:\n%+v\n\n", rf)
-			fmt.Printf("KVStore:\n%+v\n\n", rf.stateMachineCommandHandler.String())
+			fmt.Println("------------------ LOG ------------------------")
+			fmt.Printf("\nLog.Entries:\n%+v\n", rf.Log.Entries)
+			fmt.Println("------------------ KVSTORE --------------------")
+			fmt.Printf("KVStore:\n%+v\n", rf.stateMachineCommandHandler.String())
+			fmt.Println("------------------ SERVER ---------------------")
+			fmt.Printf("RaftServer:\n%+v\n", rf)
+			fmt.Println("-----------------------------------------------")
+			// spew.Dump(rf)
 			if rf.Role == "leader" {
 				rf.ForwardLogCommandToEveryoneElse()
 			}
@@ -278,12 +285,12 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 
 		if rf.Role == "leader" {
 			if msg.MsgType == SUBMIT_COMMAND_MSG && msg.SubmitCommandRequest != nil {
-				_, err := rf.stateMachineCommandHandler.HandleCommand(*msg.SubmitCommandRequest)
-				if err != nil {
-					slog.Error("Error running state machine command", "error", err)
-					Send(conn, []byte("BAD"))
-					continue
-				}
+				// _, err := rf.stateMachineCommandHandler.HandleCommand(*msg.SubmitCommandRequest)
+				// if err != nil {
+				// 	slog.Error("Error running state machine command", "error", err)
+				// 	Send(conn, []byte("BAD"))
+				// 	continue
+				// }
 				rf.SubmitNewCommand(*msg.SubmitCommandRequest)
 				Send(conn, []byte("OK"))
 				// rf.SendAppendEntriesToAllFollowers()
@@ -333,7 +340,7 @@ func (rf *RaftLogic) handleVoteResponse(res VoteResponse) {
 	if res.VoteGranted {
 		rf.votesForMe++
 
-		if rf.votesForMe > rf.clusterSize/2 {
+		if rf.votesForMe > (rf.clusterSize/2)+1 {
 			rf.BecomeLeader()
 		}
 	}
@@ -488,7 +495,7 @@ func (rf *RaftLogic) handleAppendEntriesRequest(msg Message) AppendEntriesRespon
 	serverMatchIdx, err := rf.Log.AppendEntries(*msg.AppendEntriesRequest)
 	rf.timerToCallForElection.Reset(rf.timerDurationToCallForElection)
 	if err != nil {
-		slog.Error("Error in AppendEntries", "error", err)
+		slog.Warn("Error in AppendEntries", "reason", err)
 		return AppendEntriesResponse{
 			Success:                            err == nil,
 			Term:                               rf.currentTerm,
@@ -514,8 +521,9 @@ func (rf *RaftLogic) handleAppendEntriesRequest(msg Message) AppendEntriesRespon
 	if msg.AppendEntriesRequest.LeaderCommitIdx > rf.commitIdx && len(rf.Log.Entries) >= rf.commitIdx {
 		// Run commands in state machine
 		rf.commitIdx = msg.AppendEntriesRequest.LeaderCommitIdx
-		rf.runStateMatchineCommands()
 	}
+
+	rf.runStateMatchineCommands()
 
 	// fmt.Println("========== commitIdx, lastAppliedIdx", rf.commitIdx, rf.lastAppliedIdx)
 
