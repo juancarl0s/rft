@@ -82,6 +82,7 @@ func (l *Log) GetEntriesSlice(fromIdx, toIdx int) Entries {
 
 	return entries
 }
+
 func (l *Log) Len() int {
 	l.EntriesLock.Lock()
 	defer l.EntriesLock.Unlock()
