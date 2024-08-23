@@ -299,7 +299,7 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 				// fmt.Printf("\n========== msg %+v\n", *msg.AppendEntriesResponse)
 				rf.handleAppendEntriesResponse(*msg.AppendEntriesResponse)
 			} else {
-				slog.Error("Invalid message type", "msgType", msg.MsgType, "msg", msg)
+				// slog.Error("Invalid message type", "msgType", msg.MsgType, "msg", msg)
 			}
 		} else if rf.Role == "follower" {
 			if msg.MsgType == APPEND_ENTRIES_MSG {
