@@ -286,14 +286,20 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 
 		if rf.Role == "leader" {
 			if msg.MsgType == SUBMIT_COMMAND_MSG && msg.SubmitCommandRequest != nil {
-				// _, err := rf.stateMachineCommandHandler.HandleCommand(*msg.SubmitCommandRequest)
-				// if err != nil {
-				// 	slog.Error("Error running state machine command", "error", err)
-				// 	Send(conn, []byte("BAD"))
-				// 	continue
-				// }
-				rf.SubmitNewCommand(*msg.SubmitCommandRequest)
-				Send(conn, []byte("OK"))
+				result, err := rf.stateMachineCommandHandler.HandleCommand(*msg.SubmitCommandRequest)
+				if err != nil {
+					slog.Error("Error running state machine command", "error", err)
+					Send(conn, []byte("BAD"))
+				} else {
+					rf.SubmitNewCommand(*msg.SubmitCommandRequest)
+					rf.lastAppliedIdx++
+					if result != "" {
+						Send(conn, []byte(result))
+					} else {
+						Send(conn, []byte("OK"))
+					}
+				}
+
 				// rf.SendAppendEntriesToAllFollowers()
 			} else if msg.MsgType == APPEND_ENTRIES_RESPONSE_MSG {
 				// fmt.Printf("\n========== msg %+v\n", *msg.AppendEntriesResponse)
