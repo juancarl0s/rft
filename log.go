@@ -59,13 +59,25 @@ func (l *Log) AppendCommand(term int, cmd string) int {
 	return newEntry.Idx
 }
 
-func (l *Log) GetEntriesCopyUNSAFE(fromIdx int) Entries {
+func (l *Log) GetEntriesFromCopy(fromIdx int) Entries {
 	l.EntriesLock.Lock()
 	defer l.EntriesLock.Unlock()
 
 	entries := Entries{}
 	for i := fromIdx; i < len(l.Entries); i++ {
 		entries = append(entries, l.Entries[i])
+	}
+
+	return entries
+}
+
+func (l *Log) GetEntriesSlice(fromIdx, toIdx int) Entries {
+	l.EntriesLock.Lock()
+	defer l.EntriesLock.Unlock()
+
+	entries := Entries{}
+	for _, entry := range l.Entries[fromIdx:toIdx] {
+		entries = append(entries, entry)
 	}
 
 	return entries

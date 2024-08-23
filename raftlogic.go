@@ -35,6 +35,13 @@ type RaftLogic struct {
 	macthIdxs map[string]int // for each server, index of highest log entry known to be replicated on server (initialized to 0, increases monotonically)
 
 	volatileStateLock sync.Mutex //Used when changing commitIdx and lastAppliedIdx
+
+	stateMachineCommandHandler CommandHandler
+}
+
+type CommandHandler interface {
+	HandleCommand(cmd string) (string, error)
+	String() string
 }
 
 func NewRaftLogic(nodename string, role string, term int) *RaftLogic {
@@ -56,7 +63,7 @@ func NewRaftLogic(nodename string, role string, term int) *RaftLogic {
 		volatileStateLock: sync.Mutex{},
 	}
 
-	rf.Log.AppendCommand(0, "initial dummy command")
+	rf.Log.AppendCommand(0, "initial_dummy_command arg")
 
 	// Populate nextIdx and matchIds for each server
 	for name := range SERVERS {
@@ -88,9 +95,10 @@ func (rf *RaftLogic) SubmitNewCommand(cmd string) {
 	_ = rf.Log.AppendCommand(rf.currentTerm, cmd)
 }
 
-func (rf *RaftLogic) Listen(listener net.Listener) {
+func (rf *RaftLogic) Listen(listener net.Listener, stateMachineCommandHandler CommandHandler) {
+	rf.stateMachineCommandHandler = stateMachineCommandHandler
 
-	go rf.Heartbeats(7 * time.Second)
+	go rf.Heartbeats(3 * time.Second)
 
 	for {
 		// Accept a new connection
@@ -112,6 +120,7 @@ func (rf *RaftLogic) Heartbeats(duration time.Duration) {
 			if rf.Role == "leader" {
 				slog.Info("Sending heartbeats")
 				rf.Commit()
+				rf.runStateMatchineCommands()
 				rf.Beat()
 			}
 		}
@@ -148,8 +157,9 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 		}
 
 		if msg.MsgType == SUBMIT_COMMAND_MSG && msg.SubmitCommandRequest != nil && *msg.SubmitCommandRequest == "log" {
-			fmt.Printf("\n\nEntries %+v\n\n", rf.Log.Entries)
-			fmt.Printf("RaftServer%+v\n\n", rf)
+			fmt.Printf("\n\nLog.Entries:\n%+v\n\n", rf.Log.Entries)
+			fmt.Printf("RaftServer:\n%+v\n\n", rf)
+			fmt.Printf("KVStore:\n%+v\n\n", rf.stateMachineCommandHandler.String())
 			if rf.Role == "leader" {
 				rf.ForwardLogCommandToFollowers()
 			}
@@ -158,7 +168,14 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 
 		if rf.Role == "leader" {
 			if msg.MsgType == SUBMIT_COMMAND_MSG && msg.SubmitCommandRequest != nil {
+				_, err := rf.stateMachineCommandHandler.HandleCommand(*msg.SubmitCommandRequest)
+				if err != nil {
+					slog.Error("Error running state machine command", "error", err)
+					Send(conn, []byte("BAD"))
+					continue
+				}
 				rf.SubmitNewCommand(*msg.SubmitCommandRequest)
+				Send(conn, []byte("OK"))
 				// rf.SendAppendEntriesToAllFollowers()
 
 			} else if msg.MsgType == APPEND_ENTRIES_RESPONSE_MSG {
@@ -271,6 +288,9 @@ func (rf *RaftLogic) handleAppendEntriesRequest(msg Message) AppendEntriesRespon
 		rf.commitIdx = msg.AppendEntriesRequest.LeaderCommitIdx
 	}
 
+	fmt.Println("========== commitIdx, lastAppliedIdx", rf.commitIdx, rf.lastAppliedIdx)
+	rf.runStateMatchineCommands()
+
 	// Respond to leader with the AppendEntriesResult
 	return AppendEntriesResponse{
 		Success:                            err == nil,
@@ -278,6 +298,22 @@ func (rf *RaftLogic) handleAppendEntriesRequest(msg Message) AppendEntriesRespon
 		MatchIndexFromAppendEntriesRequest: serverMatchIdx,
 		NodenameFromRequest:                msg.AppendEntriesRequest.LeaderID,
 		NodenameWhereProcessed:             rf.Nodename,
+	}
+}
+
+func (rf *RaftLogic) runStateMatchineCommands() {
+	if rf.commitIdx > rf.lastAppliedIdx {
+		cmdsToRun := rf.Log.GetEntriesSlice(rf.lastAppliedIdx, rf.commitIdx+1)
+
+		for _, cmd := range cmdsToRun {
+			fmt.Printf("\nCMD: %+v", cmd)
+			_, err := rf.stateMachineCommandHandler.HandleCommand(cmd.Cmd)
+			if err != nil {
+				slog.Error("Error running state machine command", "error", err)
+				break
+			}
+			rf.lastAppliedIdx = cmd.Idx
+		}
 	}
 }
 
@@ -339,7 +375,8 @@ func (rf *RaftLogic) SendAppendEntryToFollower(nodename string) {
 
 	entries := Entries{}
 	if len(rf.Log.Entries[followerNextIdx:]) > 0 {
-		entries = rf.Log.GetEntriesCopyUNSAFE(followerNextIdx)
+		entries = rf.Log.GetEntriesFromCopy(followerNextIdx)
+
 	}
 
 	params := AppendEntriesRequest{
