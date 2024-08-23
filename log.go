@@ -82,6 +82,12 @@ func (l *Log) GetEntriesSlice(fromIdx, toIdx int) Entries {
 
 	return entries
 }
+func (l *Log) Len() int {
+	l.EntriesLock.Lock()
+	defer l.EntriesLock.Unlock()
+
+	return len(l.Entries)
+}
 
 // AppendEntries handles the AppendEntriesRequest by performing several steps:
 // 1. Locks the EntriesLock to ensure thread-safe access to the log entries.
@@ -95,6 +101,11 @@ func (l *Log) GetEntriesSlice(fromIdx, toIdx int) Entries {
 func (l *Log) AppendEntries(params AppendEntriesRequest) (int, error) {
 	l.EntriesLock.Lock()
 	defer l.EntriesLock.Unlock()
+
+	// Hack, it's safe for me to do this because I put a dummy record at the start of the log.
+	if l.Entries[len(l.Entries)-1].Idx < params.PrevLogIdx {
+		return l.Entries[len(l.Entries)-1].Idx, fmt.Errorf("error latestEntry.Idx < params.PrevLogIdx")
+	}
 
 	matchIndex := 0
 	if len(l.Entries) > 0 {

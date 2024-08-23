@@ -120,6 +120,8 @@ func (rf *RaftLogic) Heartbeats(duration time.Duration) {
 			if rf.Role == "leader" {
 				slog.Info("Sending heartbeats")
 				rf.Commit()
+				fmt.Printf("\n========== rf %+v\n", rf)
+				fmt.Printf("\n========== entries %+v\n", rf.Log.Entries)
 				rf.runStateMatchineCommands()
 				rf.Beat()
 			}
@@ -162,6 +164,7 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 			fmt.Printf("KVStore:\n%+v\n\n", rf.stateMachineCommandHandler.String())
 			if rf.Role == "leader" {
 				rf.ForwardLogCommandToFollowers()
+				Send(conn, []byte("OK"))
 			}
 			continue
 		}
@@ -179,6 +182,7 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 				// rf.SendAppendEntriesToAllFollowers()
 
 			} else if msg.MsgType == APPEND_ENTRIES_RESPONSE_MSG {
+				fmt.Printf("\n========== msg %+v\n", *msg.AppendEntriesResponse)
 				rf.handleAppendEntriesResponse(*msg.AppendEntriesResponse)
 			} else {
 				slog.Error("Invalid message type", "msgType", msg.MsgType, "msg", msg)
@@ -207,7 +211,7 @@ func (rf *RaftLogic) SendAppendEntriesResponse(res AppendEntriesResponse) {
 		slog.Error("Error encoding appendEntriesResult JSON:", "error", err)
 		return
 	}
-
+	// fmt.Printf("\n========== msgBytes %+v\n", string(msgBytes))
 	rf.send(SERVERS[res.NodenameFromRequest], msgBytes)
 }
 
@@ -237,6 +241,13 @@ func (rf *RaftLogic) handleAppendEntriesResponse(res AppendEntriesResponse) {
 		if currentNextIdx < resNextIdx {
 			rf.nextIdxs[res.NodenameWhereProcessed] = resNextIdx
 		}
+	} else {
+		resNextIdx := res.MatchIndexFromAppendEntriesRequest + 1
+		resMatchIdx := res.MatchIndexFromAppendEntriesRequest
+		fmt.Printf("\n===@@======= resMatchIdx %+v\n", resMatchIdx)
+
+		rf.macthIdxs[res.NodenameWhereProcessed] = resMatchIdx
+		rf.nextIdxs[res.NodenameWhereProcessed] = resNextIdx
 	}
 }
 
@@ -250,8 +261,12 @@ func (rf *RaftLogic) Commit() {
 	}
 
 	sort.Ints(nodeMatchIdx)
+	fmt.Println("nodeMatchIdx !!!!!!!!!!!!!", nodeMatchIdx)
 
 	minimunMatchIdxInMajority := nodeMatchIdx[len(nodeMatchIdx)/2]
+	if rf.Log.Len() < minimunMatchIdxInMajority {
+		fmt.Println("CALL AN ELECTION NOW!!!!")
+	}
 
 	if rf.commitIdx >= minimunMatchIdxInMajority {
 		slog.Info("No index to commit")
@@ -273,23 +288,32 @@ func (rf *RaftLogic) handleAppendEntriesRequest(msg Message) AppendEntriesRespon
 	if msg.AppendEntriesRequest == nil {
 		panic("AppendEntriesRequest can't be nil")
 	}
+	// fmt.Printf("\n========== rf %+v\n", rf)
+	// fmt.Printf("========== rf.Log.Entries %+v\n", rf.Log.Entries)
+	// fmt.Printf("\n========== msg.AppendEntriesRequest %+v\n", msg.AppendEntriesRequest)
 	serverMatchIdx, err := rf.Log.AppendEntries(*msg.AppendEntriesRequest)
+	// fmt.Printf("\n========== serverMatchIdx %+v\n", serverMatchIdx)
+
 	if err != nil {
 		slog.Error("Error in AppendEntries", "error", err)
+		return AppendEntriesResponse{
+			Success:                            err == nil,
+			Term:                               serverCurrentTerm,
+			MatchIndexFromAppendEntriesRequest: serverMatchIdx,
+			NodenameFromRequest:                msg.AppendEntriesRequest.LeaderID,
+			NodenameWhereProcessed:             rf.Nodename,
+		}
 	}
 	slog.Debug("AppendEntries result", "error", err)
 
-	// Update last applied index (this is why we need to lock)
-	// rf.lastAppliedIdx = serverMatchIdx
-
 	// Update commit index of server
-	if msg.AppendEntriesRequest.LeaderCommitIdx > rf.commitIdx {
+	if msg.AppendEntriesRequest.LeaderCommitIdx > rf.commitIdx && len(rf.Log.Entries) >= rf.commitIdx {
 		// Run commands in state machine
 		rf.commitIdx = msg.AppendEntriesRequest.LeaderCommitIdx
+		rf.runStateMatchineCommands()
 	}
 
 	fmt.Println("========== commitIdx, lastAppliedIdx", rf.commitIdx, rf.lastAppliedIdx)
-	rf.runStateMatchineCommands()
 
 	// Respond to leader with the AppendEntriesResult
 	return AppendEntriesResponse{
@@ -317,23 +341,6 @@ func (rf *RaftLogic) runStateMatchineCommands() {
 	}
 }
 
-// func (rf *RaftLogic) send(addr string, msg []byte) {
-// 	conn, err := net.Dial("tcp", addr)
-// 	if err != nil {
-// 		slog.Error("Error connecting to server:", "error", err)
-// 		return
-// 	}
-// 	defer conn.Close()
-
-// 	// _, err = conn.Write(jsonData)
-// 	err = Send(conn, msg)
-// 	if err != nil {
-// 		slog.Error("Error sending message:", "error", err)
-// 		return
-// 	}
-// 	slog.Info("Message sent successfully")
-// }
-
 func (rf *RaftLogic) SendAppendEntriesToAllFollowers() {
 	if rf.Role != "leader" {
 		panic("Only leader can send AppendEtries to followers")
@@ -353,8 +360,14 @@ func (rf *RaftLogic) SendAppendEntryToFollower(nodename string) {
 	defer rf.volatileStateLock.Unlock()
 	// TODO: Implement this
 
+	// Defensive code to avoid race condisitons and out of index errors
 	followerNextIdx := rf.nextIdxs[nodename]
+	if followerNextIdx > len(rf.Log.Entries) {
+		followerNextIdx = len(rf.Log.Entries)
+		rf.nextIdxs[nodename] = followerNextIdx
+	}
 
+	fmt.Printf("\n%+v\n", rf)
 	var prevLogIdx int
 	if len(rf.Log.Entries) == 0 {
 		prevLogIdx = 0
@@ -401,73 +414,9 @@ func (rf *RaftLogic) SendAppendEntryToFollower(nodename string) {
 		slog.Error("Error encoding JSON:", "error", err)
 		return
 	}
-
-	// fmt.Printf("\nSERVERS[nodename]: %s\njsonData:\n%+v\n", nodename, string(jsonData))
-
+	// fmt.Printf("\n========== AppendEntriesRequest %+v\n", params)
 	rf.send(SERVERS[nodename], jsonData)
-	// res, err := rf.sendAndRcv(SERVERS[nodename], jsonData)
-	// if err != nil {
-	// 	slog.Error("Error sending message:", "error", err)
-	// 	return
-	// }
-
-	// fmt.Printf("\nFollower response: %+v\n\n", string(res))
 }
-
-func (rf *RaftLogic) send(addr string, msg []byte) {
-	conn, err := net.Dial("tcp", addr)
-	if err != nil {
-		// slog.Error("Error connecting to server:", "error", err)
-		return
-	}
-	defer conn.Close()
-
-	// fmt.Printf("\nmsg: %s\n\n", msg)
-	// _, err = conn.Write(jsonData)
-	err = Send(conn, msg)
-	if err != nil {
-		slog.Error("Error sending message:", "error", err)
-		return
-	}
-}
-
-func (rf *RaftLogic) sendAndRcv(addr string, msg []byte) ([]byte, error) {
-	conn, err := net.Dial("tcp", addr)
-	if err != nil {
-		// slog.Error("Error connecting to server:", "error", err)
-		return nil, err
-	}
-	defer conn.Close()
-
-	// _, err = conn.Write(jsonData)
-	err = Send(conn, msg)
-	if err != nil {
-		slog.Error("Error sending message:", "error", err)
-		return nil, err
-	}
-	// slog.Info("Message sent successfully")
-
-	res, err := Rcv_msg(conn)
-	if err != nil {
-		slog.Error("Error sending message:", "error", err)
-		return nil, err
-	}
-
-	return res, nil
-}
-
-// func (rf *RaftLogic) Commit(idx int) {
-// 	rf.volatileStateLock.Lock()
-// 	defer rf.volatileStateLock.Unlock()
-
-// 	if idx <= rf.commitIdx {
-// 		defer slog.Info("No index to commit", "idxToCommit", idx, "commitIdx", rf.commitIdx)
-// 		return
-// 	}
-// 	defer slog.Info("Index committed", "idx", idx)
-
-// 	rf.commitIdx = idx
-// }
 
 func (rf *RaftLogic) ForwardLogCommandToFollowers() {
 	if rf.Role != "leader" {
@@ -490,3 +439,62 @@ func (rf *RaftLogic) ForwardLogCommandToFollowers() {
 		go rf.send(SERVERS[nodename], jsonMsg)
 	}
 }
+
+func (rf *RaftLogic) send(addr string, msg []byte) {
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		// slog.Error("Error connecting to server:", "error", err)
+		return
+	}
+	defer conn.Close()
+
+	// fmt.Printf("\nmsg: %s\n\n", msg)
+	// _, err = conn.Write(jsonData)
+	err = Send(conn, msg)
+	if err != nil {
+		slog.Error("Error sending message:", "error", err)
+		return
+	}
+}
+
+// func (rf *RaftLogic) sendAndRcv(addr string, msg []byte) ([]byte, error) {
+// 	conn, err := net.Dial("tcp", addr)
+// 	if err != nil {
+// 		// slog.Error("Error connecting to server:", "error", err)
+// 		return nil, err
+// 	}
+// 	defer conn.Close()
+
+// 	// _, err = conn.Write(jsonData)
+// 	err = Send(conn, msg)
+// 	if err != nil {
+// 		slog.Error("Error sending message:", "error", err)
+// 		return nil, err
+// 	}
+// 	// slog.Info("Message sent successfully")
+
+// 	res, err := Rcv_msg(conn)
+// 	if err != nil {
+// 		slog.Error("Error sending message:", "error", err)
+// 		return nil, err
+// 	}
+
+// 	return res, nil
+// }
+
+// func (rf *RaftLogic) send(addr string, msg []byte) {
+// 	conn, err := net.Dial("tcp", addr)
+// 	if err != nil {
+// 		slog.Error("Error connecting to server:", "error", err)
+// 		return
+// 	}
+// 	defer conn.Close()
+
+// 	// _, err = conn.Write(jsonData)
+// 	err = Send(conn, msg)
+// 	if err != nil {
+// 		slog.Error("Error sending message:", "error", err)
+// 		return
+// 	}
+// 	slog.Info("Message sent successfully")
+// }
