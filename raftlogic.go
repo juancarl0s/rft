@@ -172,7 +172,8 @@ func (rf *RaftLogic) ElectionCalling() {
 			if rf.Role != "leader" {
 				rf.timerDurationToCallForElection = generateRandomElectionCallingDuration()
 				rf.BecomeCandidateAnRequestVotes()
-				fmt.Printf("\nCALLING FOR ELECTION!! term: %+v, newTimeout: %+v\n", rf.currentTerm, rf.timerDurationToCallForElection)
+				slog.Info("Calling for election", "forTerm", rf.currentTerm, "newElectionTimeout", rf.timerDurationToCallForElection)
+				// fmt.Printf("\nCALLING FOR ELECTION!! term: %+v, newTimeout: %+v\n", rf.currentTerm, rf.timerDurationToCallForElection)
 				// fmt.Printf("\n rf %+v\n", rf)
 			}
 		}
@@ -191,18 +192,18 @@ func (rf *RaftLogic) Heartbeats(duration time.Duration) {
 				// fmt.Printf("\n========== rf %+v\n", rf)
 				// fmt.Printf("\n========== entries %+v\n", rf.Log.Entries)
 				rf.runStateMatchineCommands()
-				rf.Beat()
+				rf.sendAppendEntries()
 			}
 		}
 	}
 }
 
-func (rf *RaftLogic) Beat() {
+func (rf *RaftLogic) sendAppendEntries() {
 	for nodename, _ := range SERVERS {
 		if nodename == rf.Nodename {
 			continue
 		}
-		go rf.SendAppendEntryToFollower(nodename)
+		go rf.sendAppendEntry(nodename)
 	}
 }
 
@@ -361,6 +362,7 @@ func (rf *RaftLogic) handleVoteRequest(req VoteRequest) VoteResponse {
 	if rf.votedFor == "" {
 		rf.votedFor = req.CandidateID
 		if req.Term >= rf.currentTerm {
+			slog.Info("Voted", "for", rf.votedFor)
 			return VoteResponse{
 				Term:        rf.currentTerm,
 				VoteGranted: true,
@@ -368,7 +370,6 @@ func (rf *RaftLogic) handleVoteRequest(req VoteRequest) VoteResponse {
 			}
 		}
 	}
-
 	return VoteResponse{
 		Term:        rf.currentTerm,
 		VoteGranted: false,
@@ -563,11 +564,11 @@ func (rf *RaftLogic) SendAppendEntriesToAllFollowers() {
 			continue
 		}
 
-		go rf.SendAppendEntryToFollower(nodename)
+		go rf.sendAppendEntry(nodename)
 	}
 }
 
-func (rf *RaftLogic) SendAppendEntryToFollower(nodename string) {
+func (rf *RaftLogic) sendAppendEntry(nodename string) {
 	rf.volatileStateLock.Lock()
 	defer rf.volatileStateLock.Unlock()
 	// TODO: Implement this
