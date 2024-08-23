@@ -11,25 +11,18 @@ type Entry struct {
 
 	Cmd string
 	// CmdClientID string // later
-
-	// Commited bool?
 }
 
 type Entries []Entry
 
 type Log struct {
-	// CurrentTerm int // latest term server has seen, maybe this should be in the Server struct?
-	// VotedFor	string // later, maybe this should be in the Server struct?
-
 	Entries     Entries
 	EntriesLock sync.Mutex
-
-	// EntryLookup map[int]*Entry
+	// EntryLookup map[int]*Entry // prob not
 }
 
 func NewLog() *Log {
 	log := &Log{
-		// CurrentTerm: 0,
 		Entries:     Entries{},
 		EntriesLock: sync.Mutex{},
 	}
@@ -78,15 +71,6 @@ func (l *Log) GetEntriesCopyUNSAFE(fromIdx int) Entries {
 	return entries
 }
 
-// func (l *Log) Lock() {
-// 	l.EntriesLock.Lock()
-// }
-
-// func (l *Log) UnLock() {
-// 	l.EntriesLock.Unlock()
-// }
-
-// TODO: remove Current term from Log
 // Return the MatchIndex for the leader to update and an error
 func (l *Log) AppendEntries(params AppendEntriesRequest) (int, error) {
 	// Move to RaftLogic

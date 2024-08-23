@@ -1,7 +1,5 @@
 package rft
 
-import "errors"
-
 var (
 	APPEND_ENTRIES_MSG          = "AppendEntriesRequest"
 	APPEND_ENTRIES_RESPONSE_MSG = "AppendEntriesResponse"
@@ -37,15 +35,15 @@ type AppendEntriesRequest struct {
 
 func (p AppendEntriesRequest) Valid() error {
 	// Allow the initial case
-	if len(p.Entries) > 0 {
-		// if p.Entries[0].Idx == 0 {
-		// 	return nil
-		// }
+	// if len(p.Entries) > 0 {
+	// 	// if p.Entries[0].Idx == 0 {
+	// 	// 	return nil
+	// 	// }
 
-		if p.LeaderCommitIdx >= p.Entries[0].Idx {
-			return errors.New("LeaderCommitIdx must be less than EntriesIndexStart")
-		}
-	}
+	// 	if p.LeaderCommitIdx >= p.Entries[0].Idx {
+	// 		return errors.New("LeaderCommitIdx must be less than EntriesIndexStart")
+	// 	}
+	// }
 
 	return nil
 }

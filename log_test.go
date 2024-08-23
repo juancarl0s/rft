@@ -8,22 +8,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-// func TestNewLog(t *testing.T) {
-// 	tests := []struct {
-// 		name string
-// 		want *Log
-// 	}{
-// 		// TODO: Add test cases.
-// 	}
-// 	for _, tt := range tests {
-// 		t.Run(tt.name, func(t *testing.T) {
-// 			if got := NewLog(); !reflect.DeepEqual(got, tt.want) {
-// 				t.Errorf("NewLog() = %v, want %v", got, tt.want)
-// 			}
-// 		})
-// 	}
-// }
-
 func TestAppendEntriesParams_Valid(t *testing.T) {
 
 	tests := []struct {
@@ -37,14 +21,14 @@ func TestAppendEntriesParams_Valid(t *testing.T) {
 		// 		Entries: Entries{{Idx: 0}},
 		// 	},
 		// },
-		{
-			name: "2",
-			params: AppendEntriesRequest{
-				Entries:         Entries{{Idx: 1}},
-				LeaderCommitIdx: 2,
-			},
-			wantErr: true,
-		},
+		// {
+		// 	name: "2",
+		// 	params: AppendEntriesRequest{
+		// 		Entries:         Entries{{Idx: 1}},
+		// 		LeaderCommitIdx: 2,
+		// 	},
+		// 	wantErr: true,
+		// },
 		// {
 		// 	name: "3",
 		// 	params: AppendEntriesRequest{
@@ -142,71 +126,72 @@ func TestLog_AppendEntries(t *testing.T) {
 		wantEntries  Entries
 		wantMatchIdx int
 	}{
-		{
-			name: "invalidParams",
-			params: AppendEntriesRequest{
-				Entries:         Entries{{Idx: 1, Term: 1}},
-				LeaderCommitIdx: 10,
-			},
-			log: &Log{
-				Entries: Entries{{
-					Idx:  0,
-					Term: 0,
-					Cmd:  "dummy",
-				}},
-				EntriesLock: sync.Mutex{},
-			},
-			wantErr: true,
-			wantEntries: Entries{{
-				Idx:  0,
-				Term: 0,
-				Cmd:  "dummy",
-			}},
-			wantMatchIdx: 0,
-		},
+		// {
+		// 	name: "invalidParams",
+		// 	params: AppendEntriesRequest{
+		// 		Entries:         Entries{{Idx: 1, Term: 1}},
+		// 		LeaderCommitIdx: 10,
+		// 	},
+		// 	log: &Log{
+		// 		Entries: Entries{{
+		// 			Idx:  0,
+		// 			Term: 0,
+		// 			Cmd:  "dummy",
+		// 		}},
+		// 		EntriesLock: sync.Mutex{},
+		// 	},
+		// 	wantErr: true,
+		// 	wantEntries: Entries{{
+		// 		Idx:  0,
+		// 		Term: 0,
+		// 		Cmd:  "dummy",
+		// 	}},
+		// 	wantMatchIdx: 0,
+		// },
 		// Consistency check
-		{
-			name: "passConsistencyCheck/first_append/fail",
-			params: AppendEntriesRequest{
-				LeaderTerm: 1,
-				LeaderID:   "leaderID",
+		// {
+		// 	name: "passConsistencyCheck/first_append/fail",
+		// 	params: AppendEntriesRequest{
+		// 		LeaderTerm: 1,
+		// 		LeaderID:   "leaderID",
 
-				PrevLogIdx:  0,
-				PrevLogTerm: 0,
+		// 		PrevLogIdx:  0,
+		// 		PrevLogTerm: 0,
 
-				Entries: Entries{
-					{
-						Idx:  0,
-						Term: 0,
-						Cmd:  "dummy",
-					},
-					{
-						Idx: 1,
-					},
-				},
+		// 		Entries: Entries{
+		// 			{
+		// 				Idx:  0,
+		// 				Term: 0,
+		// 				Cmd:  "dummy",
+		// 			},
+		// 			{
+		// 				Idx:  1,
+		// 				Term: 1,
+		// 			},
+		// 		},
 
-				LeaderCommitIdx: 0,
-			},
-			log: &Log{
-				Entries: Entries{
-					{
-						Idx:  0,
-						Term: 0,
-						Cmd:  "dummy",
-					},
-				},
-				EntriesLock: sync.Mutex{},
-			},
-			wantErr: true,
-			wantEntries: Entries{
-				{
-					Idx:  0,
-					Term: 0,
-					Cmd:  "dummy",
-				},
-			},
-			wantMatchIdx: 0,
-		},
+		// 		LeaderCommitIdx: 0,
+		// 	},
+		// 	log: &Log{
+		// 		Entries: Entries{
+		// 			{
+		// 				Idx:  0,
+		// 				Term: 0,
+		// 				Cmd:  "dummy",
+		// 			},
+		// 		},
+		// 		EntriesLock: sync.Mutex{},
+		// 	},
+		// 	wantErr: true,
+		// 	wantEntries: Entries{
+		// 		{
+		// 			Idx:  0,
+		// 			Term: 0,
+		// 			Cmd:  "dummy",
+		// 		},
+		// 	},
+		// 	wantMatchIdx: 0,
+		// },
 		// {
 		// 	name: "passConsistencyCheck/first_append/success",
 		// 	params: AppendEntriesRequest{

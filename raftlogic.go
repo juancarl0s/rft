@@ -7,8 +7,12 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"sort"
 	"sync"
+	"time"
 )
+
+// TODO: apply commands and update lastAppliedIdx accoirdingly
 
 type RaftLogic struct {
 	// Cluster config details
@@ -34,16 +38,6 @@ type RaftLogic struct {
 }
 
 func NewRaftLogic(nodename string, role string, term int) *RaftLogic {
-	nextIdx := map[string]int{}
-	matchIds := map[string]int{}
-	for name := range SERVERS {
-		if name == nodename {
-			continue
-		}
-		nextIdx[name] = 0
-		matchIds[name] = 0
-	}
-
 	rf := &RaftLogic{
 		Nodename:    nodename,
 		clusterSize: len(SERVERS),
@@ -62,13 +56,13 @@ func NewRaftLogic(nodename string, role string, term int) *RaftLogic {
 		volatileStateLock: sync.Mutex{},
 	}
 
-	rf.Log.AppendCommand(0, "initial dummy command") // maybe not?
+	rf.Log.AppendCommand(0, "initial dummy command")
 
 	// Populate nextIdx and matchIds for each server
 	for name := range SERVERS {
-		if name == nodename {
-			continue
-		}
+		// if name == nodename {
+		// 	continue
+		// }
 		rf.nextIdxs[name] = 1
 		rf.macthIdxs[name] = 0
 	}
@@ -87,13 +81,18 @@ func (rf *RaftLogic) SubmitNewCommand(cmd string) {
 	if rf.Role != "leader" {
 		panic("Only leader can send AppendEntries to followers")
 	}
+	rf.nextIdxs[rf.Nodename]++
+	rf.macthIdxs[rf.Nodename]++
 
-	rf.lastAppliedIdx = rf.Log.AppendCommand(rf.currentTerm, cmd)
+	// rf.lastAppliedIdx = rf.Log.AppendCommand(rf.currentTerm, cmd)
+	_ = rf.Log.AppendCommand(rf.currentTerm, cmd)
 }
 
-func (rf *RaftLogic) Receive(listener net.Listener) {
+func (rf *RaftLogic) Listen(listener net.Listener) {
+
+	go rf.Heartbeats(7 * time.Second)
+
 	for {
-		fmt.Println("=============================== Waiting for connection")
 		// Accept a new connection
 		conn, err := listener.Accept()
 		if err != nil {
@@ -102,6 +101,29 @@ func (rf *RaftLogic) Receive(listener net.Listener) {
 		}
 
 		go rf.HandleIncomingMsg(conn)
+	}
+}
+
+func (rf *RaftLogic) Heartbeats(duration time.Duration) {
+	ticker := time.NewTicker(duration)
+	for {
+		select {
+		case <-ticker.C:
+			if rf.Role == "leader" {
+				slog.Info("Sending heartbeats")
+				rf.Commit()
+				rf.Beat()
+			}
+		}
+	}
+}
+
+func (rf *RaftLogic) Beat() {
+	for nodename, _ := range SERVERS {
+		if nodename == rf.Nodename {
+			continue
+		}
+		go rf.SendAppendEntryToFollower(nodename)
 	}
 }
 
@@ -134,15 +156,12 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 			continue
 		}
 
-		fmt.Printf("\nReceived message:\n%+v\n\n", msg)
-
 		if rf.Role == "leader" {
 			if msg.MsgType == SUBMIT_COMMAND_MSG && msg.SubmitCommandRequest != nil {
 				rf.SubmitNewCommand(*msg.SubmitCommandRequest)
-				rf.SendAppendEntriesToAllFollowers()
+				// rf.SendAppendEntriesToAllFollowers()
 
 			} else if msg.MsgType == APPEND_ENTRIES_RESPONSE_MSG {
-				slog.Info("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@Handling AppendEntriesResponse", "msg", msg)
 				rf.handleAppendEntriesResponse(*msg.AppendEntriesResponse)
 			} else {
 				slog.Error("Invalid message type", "msgType", msg.MsgType, "msg", msg)
@@ -150,23 +169,9 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 
 		} else if rf.Role == "follower" {
 			if msg.MsgType == APPEND_ENTRIES_MSG {
+				// fmt.Printf("\nReceived message:\n%+v\n\n", msg.AppendEntriesRequest)
 				appendEntriesResult := rf.handleAppendEntriesRequest(msg)
-
 				rf.SendAppendEntriesResponse(appendEntriesResult)
-
-				// msg := Message{
-				// 	MsgType:               APPEND_ENTRIES_RESPONSE_MSG,
-				// 	AppendEntriesResponse: &appendEntriesResult,
-				// }
-
-				// msgBytes, err := json.Marshal(msg)
-				// if err != nil {
-				// 	slog.Error("Error encoding appendEntriesResult JSON:", "error", err)
-				// 	return
-				// }
-				// rf.send(conn.RemoteAddr().String(), msgBytes)
-				// slog.Info("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@Sent AppendEntriesResponse", "msg", msg, "conn.RemoteAddr().String()", conn.RemoteAddr().String(), "remoteAddr", remoteAddr)
-				// fmt.Printf("\n\n%+v\n\n", appendEntriesResult)
 			}
 		}
 
@@ -215,15 +220,36 @@ func (rf *RaftLogic) handleAppendEntriesResponse(res AppendEntriesResponse) {
 		if currentNextIdx < resNextIdx {
 			rf.nextIdxs[res.NodenameWhereProcessed] = resNextIdx
 		}
-		fmt.Println("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
 	}
+}
+
+func (rf *RaftLogic) Commit() {
+	rf.volatileStateLock.Lock()
+	defer rf.volatileStateLock.Unlock()
+
+	nodeMatchIdx := []int{}
+	for _, idx := range rf.macthIdxs {
+		nodeMatchIdx = append(nodeMatchIdx, idx)
+	}
+
+	sort.Ints(nodeMatchIdx)
+
+	minimunMatchIdxInMajority := nodeMatchIdx[len(nodeMatchIdx)/2]
+
+	if rf.commitIdx >= minimunMatchIdxInMajority {
+		slog.Info("No index to commit")
+		return
+	}
+
+	rf.commitIdx = minimunMatchIdxInMajority
+	slog.Info("Index committed", "rf.commitIdx", rf.commitIdx, "minimunMatchIdxInMajority", minimunMatchIdxInMajority)
 }
 
 func (rf *RaftLogic) handleAppendEntriesRequest(msg Message) AppendEntriesResponse {
 	rf.volatileStateLock.Lock()
 	defer rf.volatileStateLock.Unlock()
 
-	// TODO: lock for the server's term
+	// TODO: This is prob wrong, I must check if the terms are less than or more than.
 	serverCurrentTerm := rf.currentTerm
 
 	// AppendEntries to our log
@@ -237,7 +263,13 @@ func (rf *RaftLogic) handleAppendEntriesRequest(msg Message) AppendEntriesRespon
 	slog.Debug("AppendEntries result", "error", err)
 
 	// Update last applied index (this is why we need to lock)
-	rf.lastAppliedIdx = serverMatchIdx
+	// rf.lastAppliedIdx = serverMatchIdx
+
+	// Update commit index of server
+	if msg.AppendEntriesRequest.LeaderCommitIdx > rf.commitIdx {
+		// Run commands in state machine
+		rf.commitIdx = msg.AppendEntriesRequest.LeaderCommitIdx
+	}
 
 	// Respond to leader with the AppendEntriesResult
 	return AppendEntriesResponse{
@@ -387,18 +419,18 @@ func (rf *RaftLogic) sendAndRcv(addr string, msg []byte) ([]byte, error) {
 	return res, nil
 }
 
-func (rf *RaftLogic) Commit(idx int) {
-	rf.volatileStateLock.Lock()
-	defer rf.volatileStateLock.Unlock()
+// func (rf *RaftLogic) Commit(idx int) {
+// 	rf.volatileStateLock.Lock()
+// 	defer rf.volatileStateLock.Unlock()
 
-	if idx <= rf.commitIdx {
-		defer slog.Info("No index to commit", "idxToCommit", idx, "commitIdx", rf.commitIdx)
-		return
-	}
-	defer slog.Info("Index committed", "idx", idx)
+// 	if idx <= rf.commitIdx {
+// 		defer slog.Info("No index to commit", "idxToCommit", idx, "commitIdx", rf.commitIdx)
+// 		return
+// 	}
+// 	defer slog.Info("Index committed", "idx", idx)
 
-	rf.commitIdx = idx
-}
+// 	rf.commitIdx = idx
+// }
 
 func (rf *RaftLogic) ForwardLogCommandToFollowers() {
 	if rf.Role != "leader" {
