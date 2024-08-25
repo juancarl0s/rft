@@ -170,11 +170,14 @@ func (rf *RaftLogic) ElectionCalling() {
 		select {
 		case <-rf.timerToCallForElection.C:
 			if rf.Role != "leader" {
+				rf.volatileStateLock.Lock()
 				rf.timerDurationToCallForElection = generateRandomElectionCallingDuration()
+				rf.volatileStateLock.Unlock()
 				rf.BecomeCandidateAnRequestVotes()
+				// fmt.Printf("\n rf %+v\n", rf)
 				slog.Info("Calling for election", "forTerm", rf.currentTerm, "newElectionTimeout", rf.timerDurationToCallForElection)
 				// fmt.Printf("\nCALLING FOR ELECTION!! term: %+v, newTimeout: %+v\n", rf.currentTerm, rf.timerDurationToCallForElection)
-				// fmt.Printf("\n rf %+v\n", rf)
+				// fmt.Printf("\nCALLING FOR ELECTION!! timerToCallForElection: %+v, newTimeout: %+v\n", rf.timerToCallForElection, rf.timerDurationToCallForElection)
 			}
 		}
 	}
@@ -208,20 +211,28 @@ func (rf *RaftLogic) sendAppendEntries() {
 }
 
 func generateRandomDuration(min, max int) time.Duration {
-	return time.Duration((rand.Intn(max-min) + max)) * time.Second
+	return time.Duration(rand.Intn(max+min)+min) * time.Second
 }
 func generateRandomElectionCallingDuration() time.Duration {
-	return generateRandomDuration(5, 10)
+	return generateRandomDuration(1, 10)
 }
 
 func (rf *RaftLogic) Listen(listener net.Listener, stateMachineCommandHandler CommandHandler) {
 	rf.stateMachineCommandHandler = stateMachineCommandHandler
 
-	go rf.Heartbeats(2 * time.Second)
+	go rf.Heartbeats(1 * time.Second)
 
 	// rand.Seed(time.Now().UnixNano())
 	// electionRandInt := rand.IntN(5-2) + 2
 	go rf.ElectionCalling()
+
+	fmt.Println("------------------ LOG ------------------------")
+	fmt.Printf("\nLog.Entries:\n%+v\n", rf.Log.Entries)
+	fmt.Println("------------------ KVSTORE --------------------")
+	fmt.Printf("KVStore:\n%+v\n", rf.stateMachineCommandHandler.String())
+	fmt.Println("------------------ SERVER ---------------------")
+	fmt.Printf("RaftServer:\n%+v\n", rf)
+	fmt.Println("-----------------------------------------------")
 
 	for {
 		// Accept a new connection
@@ -254,8 +265,6 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 			return
 		}
 
-		// fmt.Printf("\n1<__________msg %+v\n", msg)
-
 		if msg.MsgType == SUBMIT_COMMAND_MSG && msg.SubmitCommandRequest != nil && *msg.SubmitCommandRequest == "log" {
 			// spew.Dump(rf.Log.Entries)
 			// spew.Dump(rf)
@@ -279,7 +288,11 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 		if msg.MsgType == VOTE_REQUEST_MSG {
 			// fmt.Printf("\nVoteRequest:\n%+v\n\n", msg.VoteRequest)
 
+			// fmt.Printf("\n1<__________msg %+v\n", *msg.VoteRequest)
+			// fmt.Println("-------------------------------")
+
 			res := rf.handleVoteRequest(*msg.VoteRequest)
+			// fmt.Printf("\n1res %+v\n__________>1", res)
 			rf.SendVoteResponse(msg.VoteRequest.CandidateID, res)
 			continue
 		}
@@ -305,7 +318,7 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 				// fmt.Printf("\n========== msg %+v\n", *msg.AppendEntriesResponse)
 				rf.handleAppendEntriesResponse(*msg.AppendEntriesResponse)
 			} else {
-				// slog.Error("Invalid message type", "msgType", msg.MsgType, "msg", msg)
+				slog.Error("Invalid message type", "msgType", msg.MsgType, "msg", msg)
 			}
 		} else if rf.Role == "follower" {
 			if msg.MsgType == APPEND_ENTRIES_MSG {
@@ -328,9 +341,6 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 			}
 
 			if msg.MsgType == APPEND_ENTRIES_MSG {
-				if msg.AppendEntriesRequest.LeaderTerm >= rf.currentTerm {
-					rf.BecomeFollower()
-				}
 
 				// fmt.Printf("\nReceived message:\n%+v\n\n", msg.AppendEntriesRequest)
 				appendEntriesResult := rf.handleAppendEntriesRequest(msg)
@@ -343,6 +353,11 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 func (rf *RaftLogic) handleVoteResponse(res VoteResponse) {
 	rf.volatileStateLock.Lock()
 	defer rf.volatileStateLock.Unlock()
+
+	if res.Term > rf.currentTerm {
+		rf.currentTerm = res.Term
+		rf.BecomeFollower()
+	}
 
 	if res.VoteGranted {
 		rf.votesForMe++
@@ -365,9 +380,15 @@ func (rf *RaftLogic) handleVoteRequest(req VoteRequest) VoteResponse {
 		}
 	}
 
+	if req.Term > rf.currentTerm {
+		rf.currentTerm = req.Term
+		rf.BecomeFollower()
+	}
+
 	if rf.votedFor == "" {
 		rf.votedFor = req.CandidateID
 		if req.Term >= rf.currentTerm {
+			rf.timerToCallForElection.Reset(rf.timerDurationToCallForElection)
 			slog.Info("Voted", "for", rf.votedFor)
 			return VoteResponse{
 				Term:        rf.currentTerm,
@@ -381,7 +402,6 @@ func (rf *RaftLogic) handleVoteRequest(req VoteRequest) VoteResponse {
 		VoteGranted: false,
 		VoterID:     rf.Nodename,
 	}
-
 }
 
 func (rf *RaftLogic) SendVoteResponse(candidateId string, res VoteResponse) {
@@ -419,12 +439,17 @@ func (rf *RaftLogic) SendAppendEntriesResponse(res AppendEntriesResponse) {
 	rf.send(SERVERS[res.NodenameFromRequest], msgBytes)
 }
 
+// TODO: implement follower -> leader redirect for client calls to follower
+
 func (rf *RaftLogic) handleAppendEntriesResponse(res AppendEntriesResponse) {
 	rf.volatileStateLock.Lock()
 	defer rf.volatileStateLock.Unlock()
 	if rf.currentTerm < res.Term {
-		// TODO:  handle this
-		panic("NOT IMPLEMENTED YET - become follower? call for election?")
+		rf.currentTerm = res.Term
+		rf.BecomeFollower()
+		return
+		// // TODO:  handle this
+		// panic("NOT IMPLEMENTED YET - become follower? call for election?")
 	}
 
 	if rf.Role != "leader" {
@@ -493,6 +518,8 @@ func (rf *RaftLogic) handleAppendEntriesRequest(msg Message) AppendEntriesRespon
 		panic("AppendEntriesRequest can't be nil")
 	}
 
+	rf.timerToCallForElection.Reset(rf.timerDurationToCallForElection)
+
 	// if msg.AppendEntriesRequest.LeaderTerm >= serverCurrentTerm {
 	// }
 
@@ -500,7 +527,22 @@ func (rf *RaftLogic) handleAppendEntriesRequest(msg Message) AppendEntriesRespon
 	// fmt.Printf("========== rf.Log.Entries %+v\n", rf.Log.Entries)
 	// fmt.Printf("\n========== msg.AppendEntriesRequest %+v\n", msg.AppendEntriesRequest)
 	serverMatchIdx, err := rf.Log.AppendEntries(*msg.AppendEntriesRequest)
-	rf.timerToCallForElection.Reset(rf.timerDurationToCallForElection)
+
+	if msg.AppendEntriesRequest.LeaderTerm < rf.currentTerm {
+		rf.currentTerm = msg.AppendEntriesRequest.LeaderTerm
+		if rf.Role != "follower" {
+			rf.BecomeFollower()
+		}
+
+		return AppendEntriesResponse{
+			Success:                            false,
+			Term:                               rf.currentTerm,
+			MatchIndexFromAppendEntriesRequest: serverMatchIdx,
+			NodenameFromRequest:                msg.AppendEntriesRequest.LeaderID,
+			NodenameWhereProcessed:             rf.Nodename,
+		}
+	}
+
 	if err != nil {
 		slog.Warn("Error in AppendEntries", "reason", err)
 		return AppendEntriesResponse{
