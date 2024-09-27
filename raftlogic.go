@@ -132,14 +132,14 @@ func (rf *RaftLogic) SendVoteRequest(nodename string) {
 	rf.send(SERVERS[nodename], jsonData)
 }
 
-func (rf *RaftLogic) BecomeFollower() {
-	rf.volatileStateLock.Lock()
-	defer rf.volatileStateLock.Unlock()
+func (rf *RaftLogic) BecomeFollowerUNSAFE() {
+	// rf.volatileStateLock.Lock()
+	// defer rf.volatileStateLock.Unlock()
 
 	rf.Role = "follower"
 }
 
-func (rf *RaftLogic) BecomeLeader() {
+func (rf *RaftLogic) BecomeLeaderUNSAFE() {
 	// rf.volatileStateLock.Lock()
 	// defer rf.volatileStateLock.Unlock()
 
@@ -356,14 +356,14 @@ func (rf *RaftLogic) handleVoteResponse(res VoteResponse) {
 
 	if res.Term > rf.currentTerm {
 		rf.currentTerm = res.Term
-		rf.BecomeFollower()
+		rf.BecomeFollowerUNSAFE()
 	}
 
 	if res.VoteGranted {
 		rf.votesForMe++
 
 		if rf.votesForMe > (rf.clusterSize/2)+1 {
-			rf.BecomeLeader()
+			rf.BecomeLeaderUNSAFE()
 		}
 	}
 }
@@ -382,7 +382,7 @@ func (rf *RaftLogic) handleVoteRequest(req VoteRequest) VoteResponse {
 
 	if req.Term > rf.currentTerm {
 		rf.currentTerm = req.Term
-		rf.BecomeFollower()
+		rf.BecomeFollowerUNSAFE()
 	}
 
 	if rf.votedFor == "" {
@@ -446,7 +446,7 @@ func (rf *RaftLogic) handleAppendEntriesResponse(res AppendEntriesResponse) {
 	defer rf.volatileStateLock.Unlock()
 	if rf.currentTerm < res.Term {
 		rf.currentTerm = res.Term
-		rf.BecomeFollower()
+		rf.BecomeFollowerUNSAFE()
 		return
 		// // TODO:  handle this
 		// panic("NOT IMPLEMENTED YET - become follower? call for election?")
@@ -531,7 +531,7 @@ func (rf *RaftLogic) handleAppendEntriesRequest(msg Message) AppendEntriesRespon
 	if msg.AppendEntriesRequest.LeaderTerm < rf.currentTerm {
 		rf.currentTerm = msg.AppendEntriesRequest.LeaderTerm
 		if rf.Role != "follower" {
-			rf.BecomeFollower()
+			rf.BecomeFollowerUNSAFE()
 		}
 
 		return AppendEntriesResponse{
