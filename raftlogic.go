@@ -171,15 +171,22 @@ func (rf *RaftLogic) ElectionCalling() {
 		case <-rf.timerToCallForElection.C:
 			if rf.Role != "leader" {
 				rf.volatileStateLock.Lock()
-				rf.BecomeCandidateAnRequestVotesUNSAFE()
-				rf.timerDurationToCallForElection = generateRandomElectionCallingDuration()
-				rf.timerToCallForElection.Reset(rf.timerDurationToCallForElection)
+				// rf.BecomeCandidateAnRequestVotesUNSAFE()
+				// rf.timerDurationToCallForElection = generateRandomElectionCallingDuration()
+				// rf.timerToCallForElection.Reset(rf.timerDurationToCallForElection)
+				rf.CallForElectionUNSAFE()
 				rf.volatileStateLock.Unlock()
 
-				slog.Info("Calling for election", "forTerm", rf.currentTerm, "newElectionTimeout", rf.timerDurationToCallForElection)
 			}
 		}
 	}
+}
+
+func (rf *RaftLogic) CallForElectionUNSAFE() {
+	slog.Info("Calling for election", "forTerm", rf.currentTerm, "newElectionTimeout", rf.timerDurationToCallForElection)
+	rf.BecomeCandidateAnRequestVotesUNSAFE()
+	rf.timerDurationToCallForElection = generateRandomElectionCallingDuration()
+	rf.timerToCallForElection.Reset(rf.timerDurationToCallForElection)
 }
 
 func (rf *RaftLogic) Heartbeats(duration time.Duration) {
@@ -188,7 +195,7 @@ func (rf *RaftLogic) Heartbeats(duration time.Duration) {
 		select {
 		case <-ticker.C:
 			if rf.Role == "leader" {
-				fmt.Println("♥")
+				fmt.Println("♥", time.Now())
 				rf.Commit()
 				rf.runStateMatchineCommands()
 				rf.sendAppendEntries()
@@ -376,6 +383,7 @@ func (rf *RaftLogic) handleVoteRequest(req VoteRequest) VoteResponse {
 	if req.Term > rf.currentTerm {
 		rf.currentTerm = req.Term
 		rf.BecomeFollowerUNSAFE()
+		rf.votedFor = ""
 	}
 
 	if rf.votedFor == "" {
