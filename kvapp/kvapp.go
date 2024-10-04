@@ -26,12 +26,10 @@ func (kv *KVApp) String() string {
 
 func (kv *KVApp) HandleCommand(cmd string) (string, error) {
 
-	// fmt.Printf("\n@@@@@@@@@@@@@@@@@@@@@@@Handling command: '%s'\n", cmd)
 	op, opArgs, err := splitAtFirstSpace(cmd)
 	if err != nil {
 		return "", fmt.Errorf("error parsing command: %w", err)
 	}
-	// fmt.Printf("\n@@@@@@@@@@@@@@@@@@@@@ op:'%s' ---- opArgs:'%+v'\n", cmd, opArgs)
 
 	var value string
 

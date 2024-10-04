@@ -18,7 +18,7 @@ type Entries []Entry
 type Log struct {
 	Entries     Entries
 	EntriesLock sync.Mutex
-	// EntryLookup map[int]*Entry // prob not
+	// EntryLookup map[int]*Entry // later
 }
 
 func NewLog() *Log {

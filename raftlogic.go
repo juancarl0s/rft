@@ -91,8 +91,8 @@ func NewRaftLogic(nodename string, role string, term int) *RaftLogic {
 	return rf
 }
 
-func (rf *RaftLogic) BecomeCandidateAnRequestVotes() {
-	rf.volatileStateLock.Lock()
+func (rf *RaftLogic) BecomeCandidateAnRequestVotesUNSAFE() {
+	// rf.volatileStateLock.Lock()
 
 	rf.currentTerm++
 
@@ -102,7 +102,7 @@ func (rf *RaftLogic) BecomeCandidateAnRequestVotes() {
 
 	rf.Role = "candidate"
 
-	rf.volatileStateLock.Unlock()
+	// rf.volatileStateLock.Unlock()
 
 	for nodename, _ := range SERVERS {
 		if nodename == rf.Nodename {
@@ -171,13 +171,12 @@ func (rf *RaftLogic) ElectionCalling() {
 		case <-rf.timerToCallForElection.C:
 			if rf.Role != "leader" {
 				rf.volatileStateLock.Lock()
+				rf.BecomeCandidateAnRequestVotesUNSAFE()
 				rf.timerDurationToCallForElection = generateRandomElectionCallingDuration()
+				rf.timerToCallForElection.Reset(rf.timerDurationToCallForElection)
 				rf.volatileStateLock.Unlock()
-				rf.BecomeCandidateAnRequestVotes()
-				// fmt.Printf("\n rf %+v\n", rf)
+
 				slog.Info("Calling for election", "forTerm", rf.currentTerm, "newElectionTimeout", rf.timerDurationToCallForElection)
-				// fmt.Printf("\nCALLING FOR ELECTION!! term: %+v, newTimeout: %+v\n", rf.currentTerm, rf.timerDurationToCallForElection)
-				// fmt.Printf("\nCALLING FOR ELECTION!! timerToCallForElection: %+v, newTimeout: %+v\n", rf.timerToCallForElection, rf.timerDurationToCallForElection)
 			}
 		}
 	}
@@ -190,10 +189,7 @@ func (rf *RaftLogic) Heartbeats(duration time.Duration) {
 		case <-ticker.C:
 			if rf.Role == "leader" {
 				fmt.Println("♥")
-				// slog.Info("Sending heartbeats")
 				rf.Commit()
-				// fmt.Printf("\n========== rf %+v\n", rf)
-				// fmt.Printf("\n========== entries %+v\n", rf.Log.Entries)
 				rf.runStateMatchineCommands()
 				rf.sendAppendEntries()
 			}
@@ -222,8 +218,6 @@ func (rf *RaftLogic) Listen(listener net.Listener, stateMachineCommandHandler Co
 
 	go rf.Heartbeats(1 * time.Second)
 
-	// rand.Seed(time.Now().UnixNano())
-	// electionRandInt := rand.IntN(5-2) + 2
 	go rf.ElectionCalling()
 
 	fmt.Println("------------------ LOG ------------------------")
@@ -266,9 +260,6 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 		}
 
 		if msg.MsgType == SUBMIT_COMMAND_MSG && msg.SubmitCommandRequest != nil && *msg.SubmitCommandRequest == "log" {
-			// spew.Dump(rf.Log.Entries)
-			// spew.Dump(rf)
-			// spew.Dump(rf.stateMachineCommandHandler.String())
 			fmt.Println("------------------ LOG ------------------------")
 			fmt.Printf("\nLog.Entries:\n%+v\n", rf.Log.Entries)
 			fmt.Println("------------------ KVSTORE --------------------")
@@ -276,12 +267,10 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 			fmt.Println("------------------ SERVER ---------------------")
 			fmt.Printf("RaftServer:\n%+v\n", rf)
 			fmt.Println("-----------------------------------------------")
-			// spew.Dump(rf)
 			if rf.Role == "leader" {
 				rf.ForwardLogCommandToEveryoneElse()
 			}
 			Send(conn, []byte("OK"))
-			// fmt.Printf("1__________>\n")
 			continue
 		}
 
@@ -361,16 +350,20 @@ func (rf *RaftLogic) handleVoteResponse(res VoteResponse) {
 
 	if res.VoteGranted {
 		rf.votesForMe++
+	}
 
-		if rf.votesForMe > (rf.clusterSize/2)+1 {
-			rf.BecomeLeaderUNSAFE()
-		}
+	if rf.votesForMe > (rf.clusterSize/2)+1 {
+		rf.BecomeLeaderUNSAFE()
 	}
 }
 
 func (rf *RaftLogic) handleVoteRequest(req VoteRequest) VoteResponse {
 	rf.volatileStateLock.Lock()
 	defer rf.volatileStateLock.Unlock()
+
+	// if I'm a candidate, check my term vs voterequest term
+	//  my term bigger -> deny vote
+	//  my term lower -> become follower and vote
 
 	if req.Term < rf.currentTerm {
 		return VoteResponse{
@@ -509,7 +502,6 @@ func (rf *RaftLogic) Commit() {
 }
 
 func (rf *RaftLogic) handleAppendEntriesRequest(msg Message) AppendEntriesResponse {
-	// fmt.Println("------------ handleAppendEntriesRequest")
 	rf.volatileStateLock.Lock()
 	defer rf.volatileStateLock.Unlock()
 
@@ -518,14 +510,10 @@ func (rf *RaftLogic) handleAppendEntriesRequest(msg Message) AppendEntriesRespon
 		panic("AppendEntriesRequest can't be nil")
 	}
 
-	rf.timerToCallForElection.Reset(rf.timerDurationToCallForElection)
+	if msg.AppendEntriesRequest.LeaderTerm >= rf.currentTerm {
+		rf.timerToCallForElection.Reset(rf.timerDurationToCallForElection)
+	}
 
-	// if msg.AppendEntriesRequest.LeaderTerm >= serverCurrentTerm {
-	// }
-
-	// fmt.Printf("\n========== rf %+v\n", rf)
-	// fmt.Printf("========== rf.Log.Entries %+v\n", rf.Log.Entries)
-	// fmt.Printf("\n========== msg.AppendEntriesRequest %+v\n", msg.AppendEntriesRequest)
 	serverMatchIdx, err := rf.Log.AppendEntries(*msg.AppendEntriesRequest)
 
 	if msg.AppendEntriesRequest.LeaderTerm < rf.currentTerm {
@@ -553,8 +541,6 @@ func (rf *RaftLogic) handleAppendEntriesRequest(msg Message) AppendEntriesRespon
 			NodenameWhereProcessed:             rf.Nodename,
 		}
 	}
-	// fmt.Printf("\n========== serverMatchIdx %+v\n", serverMatchIdx)
-	// slog.Debug("AppendEntries result", "error", err)
 
 	if msg.AppendEntriesRequest.LeaderTerm < rf.currentTerm {
 		return AppendEntriesResponse{
@@ -591,7 +577,6 @@ func (rf *RaftLogic) runStateMatchineCommands() {
 		cmdsToRun := rf.Log.GetEntriesSlice(rf.lastAppliedIdx, rf.commitIdx+1)
 
 		for _, cmd := range cmdsToRun {
-			// fmt.Printf("\nCMD: %+v", cmd)
 			_, err := rf.stateMachineCommandHandler.HandleCommand(cmd.Cmd)
 			if err != nil {
 				slog.Error("Error running state machine command", "error", err)
@@ -741,21 +726,4 @@ func (rf *RaftLogic) send(addr string, msg []byte) {
 // 	}
 
 // 	return res, nil
-// }
-
-// func (rf *RaftLogic) send(addr string, msg []byte) {
-// 	conn, err := net.Dial("tcp", addr)
-// 	if err != nil {
-// 		slog.Error("Error connecting to server:", "error", err)
-// 		return
-// 	}
-// 	defer conn.Close()
-
-// 	// _, err = conn.Write(jsonData)
-// 	err = Send(conn, msg)
-// 	if err != nil {
-// 		slog.Error("Error sending message:", "error", err)
-// 		return
-// 	}
-// 	slog.Info("Message sent successfully")
 // }
