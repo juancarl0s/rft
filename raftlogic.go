@@ -81,9 +81,9 @@ func NewRaftLogic(nodename string, role string, term int) *RaftLogic {
 
 	// Populate nextIdx and matchIds for each server
 	for name := range SERVERS {
-		// if name == nodename {
-		// 	continue
-		// }
+		if name == nodename {
+			continue
+		}
 		rf.nextIdxs[name] = 1
 		rf.macthIdxs[name] = 0
 	}
@@ -92,17 +92,13 @@ func NewRaftLogic(nodename string, role string, term int) *RaftLogic {
 }
 
 func (rf *RaftLogic) BecomeCandidateAnRequestVotesUNSAFE() {
-	// rf.volatileStateLock.Lock()
-
 	rf.currentTerm++
 
-	// Vote for self
+	// Vote for self.
 	rf.votesForMe = 1
 	rf.votedFor = ""
 
 	rf.Role = "candidate"
-
-	// rf.volatileStateLock.Unlock()
 
 	for nodename, _ := range SERVERS {
 		if nodename == rf.Nodename {
@@ -133,16 +129,10 @@ func (rf *RaftLogic) SendVoteRequest(nodename string) {
 }
 
 func (rf *RaftLogic) BecomeFollowerUNSAFE() {
-	// rf.volatileStateLock.Lock()
-	// defer rf.volatileStateLock.Unlock()
-
 	rf.Role = "follower"
 }
 
 func (rf *RaftLogic) BecomeLeaderUNSAFE() {
-	// rf.volatileStateLock.Lock()
-	// defer rf.volatileStateLock.Unlock()
-
 	rf.Role = "leader"
 }
 
@@ -171,9 +161,6 @@ func (rf *RaftLogic) ElectionCalling() {
 		case <-rf.timerToCallForElection.C:
 			if rf.Role != "leader" {
 				rf.volatileStateLock.Lock()
-				// rf.BecomeCandidateAnRequestVotesUNSAFE()
-				// rf.timerDurationToCallForElection = generateRandomElectionCallingDuration()
-				// rf.timerToCallForElection.Reset(rf.timerDurationToCallForElection)
 				rf.CallForElectionUNSAFE()
 				rf.volatileStateLock.Unlock()
 
@@ -205,7 +192,7 @@ func (rf *RaftLogic) Heartbeats(duration time.Duration) {
 }
 
 func (rf *RaftLogic) sendAppendEntries() {
-	for nodename, _ := range SERVERS {
+	for nodename := range SERVERS {
 		if nodename == rf.Nodename {
 			continue
 		}
@@ -220,6 +207,19 @@ func generateRandomElectionCallingDuration() time.Duration {
 	return generateRandomDuration(1, 10)
 }
 
+func (rf *RaftLogic) LogRaft() {
+	fmt.Println("------------------ LOG ------------------------")
+	fmt.Println("\nLog.Entries:")
+	for _, logEntry := range rf.Log.Entries {
+		fmt.Printf("  %+v\n", logEntry)
+	}
+	fmt.Println("------------------ KVSTORE --------------------")
+	fmt.Printf("KVStore:\n%+v\n", rf.stateMachineCommandHandler.String())
+	fmt.Println("------------------ SERVER ---------------------")
+	fmt.Printf("RaftServer:\n%+v\n", rf)
+	fmt.Println("-----------------------------------------------")
+}
+
 func (rf *RaftLogic) Listen(listener net.Listener, stateMachineCommandHandler CommandHandler) {
 	rf.stateMachineCommandHandler = stateMachineCommandHandler
 
@@ -227,16 +227,10 @@ func (rf *RaftLogic) Listen(listener net.Listener, stateMachineCommandHandler Co
 
 	go rf.ElectionCalling()
 
-	fmt.Println("------------------ LOG ------------------------")
-	fmt.Printf("\nLog.Entries:\n%+v\n", rf.Log.Entries)
-	fmt.Println("------------------ KVSTORE --------------------")
-	fmt.Printf("KVStore:\n%+v\n", rf.stateMachineCommandHandler.String())
-	fmt.Println("------------------ SERVER ---------------------")
-	fmt.Printf("RaftServer:\n%+v\n", rf)
-	fmt.Println("-----------------------------------------------")
+	rf.LogRaft()
 
 	for {
-		// Accept a new connection
+		// Accept a new connection.
 		conn, err := listener.Accept()
 		if err != nil {
 			slog.Error("Error accepting connection:", "error", err)
@@ -267,13 +261,7 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 		}
 
 		if msg.MsgType == SUBMIT_COMMAND_MSG && msg.SubmitCommandRequest != nil && *msg.SubmitCommandRequest == "log" {
-			fmt.Println("------------------ LOG ------------------------")
-			fmt.Printf("\nLog.Entries:\n%+v\n", rf.Log.Entries)
-			fmt.Println("------------------ KVSTORE --------------------")
-			fmt.Printf("KVStore:\n%+v\n", rf.stateMachineCommandHandler.String())
-			fmt.Println("------------------ SERVER ---------------------")
-			fmt.Printf("RaftServer:\n%+v\n", rf)
-			fmt.Println("-----------------------------------------------")
+			rf.LogRaft()
 			if rf.Role == "leader" {
 				rf.ForwardLogCommandToEveryoneElse()
 			}
@@ -282,13 +270,7 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 		}
 
 		if msg.MsgType == VOTE_REQUEST_MSG {
-			// fmt.Printf("\nVoteRequest:\n%+v\n\n", msg.VoteRequest)
-
-			// fmt.Printf("\n1<__________msg %+v\n", *msg.VoteRequest)
-			// fmt.Println("-------------------------------")
-
 			res := rf.handleVoteRequest(*msg.VoteRequest)
-			// fmt.Printf("\n1res %+v\n__________>1", res)
 			rf.SendVoteResponse(msg.VoteRequest.CandidateID, res)
 			continue
 		}
@@ -308,17 +290,14 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 						Send(conn, []byte("OK"))
 					}
 				}
-
 				// rf.SendAppendEntriesToAllFollowers()
 			} else if msg.MsgType == APPEND_ENTRIES_RESPONSE_MSG {
-				// fmt.Printf("\n========== msg %+v\n", *msg.AppendEntriesResponse)
 				rf.handleAppendEntriesResponse(*msg.AppendEntriesResponse)
 			} else {
 				slog.Error("Invalid message type", "msgType", msg.MsgType, "msg", msg)
 			}
 		} else if rf.Role == "follower" {
 			if msg.MsgType == APPEND_ENTRIES_MSG {
-				// fmt.Printf("\nReceived message:\n%+v\n\n", msg.AppendEntriesRequest)
 				appendEntriesResult := rf.handleAppendEntriesRequest(msg)
 				rf.SendAppendEntriesResponse(appendEntriesResult)
 			}
@@ -331,14 +310,10 @@ func (rf *RaftLogic) HandleIncomingMsg(conn net.Conn) {
 			}
 		} else if rf.Role == "candidate" {
 			if msg.MsgType == VOTE_RESPONSE_MSG {
-				// fmt.Printf("\nVoteResponse:\n%+v\n\n", msg.VoteResponse)
-
 				rf.handleVoteResponse(*msg.VoteResponse)
 			}
 
 			if msg.MsgType == APPEND_ENTRIES_MSG {
-
-				// fmt.Printf("\nReceived message:\n%+v\n\n", msg.AppendEntriesRequest)
 				appendEntriesResult := rf.handleAppendEntriesRequest(msg)
 				rf.SendAppendEntriesResponse(appendEntriesResult)
 			}
@@ -368,10 +343,7 @@ func (rf *RaftLogic) handleVoteRequest(req VoteRequest) VoteResponse {
 	rf.volatileStateLock.Lock()
 	defer rf.volatileStateLock.Unlock()
 
-	// if I'm a candidate, check my term vs voterequest term
-	//  my term bigger -> deny vote
-	//  my term lower -> become follower and vote
-
+	// My term is higher -> deny vote
 	if req.Term < rf.currentTerm {
 		return VoteResponse{
 			Term:        rf.currentTerm,
@@ -379,7 +351,7 @@ func (rf *RaftLogic) handleVoteRequest(req VoteRequest) VoteResponse {
 			VoterID:     rf.Nodename,
 		}
 	}
-
+	// My term is lower  -> become follower and vote
 	if req.Term > rf.currentTerm {
 		rf.currentTerm = req.Term
 		rf.BecomeFollowerUNSAFE()
@@ -449,14 +421,12 @@ func (rf *RaftLogic) handleAppendEntriesResponse(res AppendEntriesResponse) {
 		rf.currentTerm = res.Term
 		rf.BecomeFollowerUNSAFE()
 		return
-		// // TODO:  handle this
-		// panic("NOT IMPLEMENTED YET - become follower? call for election?")
 	}
 
 	if rf.Role != "leader" {
 		return
 		//TODO: handle this, this is not really true
-		// panic("Only leader can receive AppendEntries to followers")
+		// panic("Only leader can receive AppendEntriesResponse to followers")
 	}
 
 	if res.Success {
