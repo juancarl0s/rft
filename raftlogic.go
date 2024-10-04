@@ -484,21 +484,27 @@ func (rf *RaftLogic) Commit() {
 	}
 
 	sort.Ints(nodeMatchIdx)
-	// fmt.Println("nodeMatchIdx !!!!!!!!!!!!!", nodeMatchIdx)
 
-	minimunMatchIdxInMajority := nodeMatchIdx[len(nodeMatchIdx)/2]
-	if rf.Log.Len() < minimunMatchIdxInMajority {
+	// The median index match (highest log entry index known to be replicated on server)
+	// across all servers is the index to commit across servers, because
+	// the majority of the servers have it in their log.
+	maximumMatchIdxInMajority := nodeMatchIdx[len(nodeMatchIdx)/2]
+
+	// If we're here is because we are (or think we are the leader),
+	// if the maximumMatchIdxInMajority is higher than our log's max index
+	// (which is the same as .Len()), we're somehow behind so we call for an election.
+	if rf.Log.Len() < maximumMatchIdxInMajority {
 		// TODO: juan
 		fmt.Println("CALL AN ELECTION NOW!!!!") //?????
 	}
 
-	if rf.commitIdx >= minimunMatchIdxInMajority {
+	if rf.commitIdx >= maximumMatchIdxInMajority {
 		// slog.Info("No index to commit")
 		return
 	}
 
-	rf.commitIdx = minimunMatchIdxInMajority
-	slog.Info("Index committed", "rf.commitIdx", rf.commitIdx, "minimunMatchIdxInMajority", minimunMatchIdxInMajority)
+	rf.commitIdx = maximumMatchIdxInMajority
+	slog.Info("Index committed", "rf.commitIdx", rf.commitIdx, "minimunMatchIdxInMajority", maximumMatchIdxInMajority)
 }
 
 func (rf *RaftLogic) handleAppendEntriesRequest(msg Message) AppendEntriesResponse {
@@ -560,8 +566,6 @@ func (rf *RaftLogic) handleAppendEntriesRequest(msg Message) AppendEntriesRespon
 
 	rf.runStateMatchineCommands()
 
-	// fmt.Println("========== commitIdx, lastAppliedIdx", rf.commitIdx, rf.lastAppliedIdx)
-
 	// Respond to leader with the AppendEntriesResult
 	return AppendEntriesResponse{
 		Success:                            err == nil,
@@ -604,7 +608,6 @@ func (rf *RaftLogic) SendAppendEntriesToAllFollowers() {
 func (rf *RaftLogic) sendAppendEntry(nodename string) {
 	rf.volatileStateLock.Lock()
 	defer rf.volatileStateLock.Unlock()
-	// TODO: Implement this
 
 	// Defensive code to avoid race condisitons and out of index errors
 	followerNextIdx := rf.nextIdxs[nodename]
@@ -660,7 +663,7 @@ func (rf *RaftLogic) sendAppendEntry(nodename string) {
 		slog.Error("Error encoding JSON:", "error", err)
 		return
 	}
-	// fmt.Printf("\n========== AppendEntriesRequest %+v\n", params)
+
 	rf.send(SERVERS[nodename], jsonData)
 }
 
