@@ -12,7 +12,7 @@ import (
 )
 
 // Example run (connect as a client to a server indentified by the number 3):
-// go run 07_leader_election/client/main.go 3
+// go run example/client/main.go 3
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("Usage: go run main.go <nodename>")
